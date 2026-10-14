@@ -7,13 +7,12 @@
 You need **Copilot CLI** and **Git**. This repository is public; downloading the plugin requires no repository credentials. Sign in to Copilot to use your models.
 
 ```sh
-copilot plugin install bluetripod/fusion-big-boss
+copilot plugin marketplace add bluetripod/fusion-big-boss
+copilot plugin install fusion-big-boss@bluetripod-plugins
 copilot plugin list
 ```
 
-This uses the [native plugin installer](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-plugin-reference#plugin-specification-for-install-command); no local clone or marketplace setup is needed.
-
-CLI 1.0.95 supports direct installs but emits a deprecation warning; GitHub's current documentation still lists this route.
+This registers our [plugin marketplace](https://docs.github.com/en/copilot/how-tos/copilot-cli/customize-copilot/plugins-marketplace) and installs Fusion from it; no local clone is needed.
 
 ## 2. Enable and choose models
 
@@ -39,6 +38,6 @@ For code review, configure Reviewer, then ask **“Do a code review with the Fus
 
 - **Context:** native `default` / `long_context` tiers, not custom token budgets. Long context may cost more.
 - **Follow-ups:** `write_agent` steers running workers or continues idle ones. Terminal workers cannot resume; foreground advisors do not support these follow-ups.
-- **Updates:** run `copilot plugin update fusion-big-boss`, then start a fresh session after active work finishes. After upgrading from a differently named plugin, reapply `/fusion`; settings/history are not migrated automatically.
+- **Updates:** run `copilot plugin update fusion-big-boss@bluetripod-plugins`, then start a fresh session after active work finishes. After upgrading from a differently named plugin, reapply `/fusion`; settings/history are not migrated automatically.
 
 **Checks:** from the repository root, run `npm test`. See [development](../README.md#development) for dependencies and the full suite. SDK tests use an inert transport; live permissions and delivery still depend on the installed CLI.

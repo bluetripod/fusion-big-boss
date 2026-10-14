@@ -1,0 +1,10 @@
+{
+  "name": "bluetripod-plugins",
+  "owner": { "name": "bluetripod" },
+  "plugins": [
+    {
+      "name": "fusion-big-boss",
+      "source": "./"
+    }
+  ]
+}
