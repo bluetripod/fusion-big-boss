@@ -11,22 +11,25 @@ Fusion coordinates a lead and specialist workers across **OpenCode, Copilot CLI 
 | Role | Responsibility | Tool boundaries |
 | :--- | :--- | :--- |
 | **Lead** | Understand the source, plan, make decisions, implement, integrate and answer you. | Bounded reads, edits and worker controls. Delegates shell, search and retrieval. |
-| **Coding sidekick** | Execute a fully specified change, file lookup or command; return results and blockers. | File tools, shell/Git/tests and host-supported retrieval. Cannot spawn workers. |
-| **Advisor** · optional | Challenge a specific decision and explain tradeoffs. | Read-only; delegates checks to its own evidence sidekicks. No direct shell, web or edits. |
-| **Reviewer** · optional | Review a frozen change snapshot **when you explicitly ask**. Report findings; the lead owns fixes. | Bounded reads, installed review guidance and its own evidence sidekick. No direct shell, web or edits. |
-| **Evidence sidekick** | Locate files, inspect Git read-only or run specified checks for an advisor/reviewer. Uses your sidekick model. | Read/search/shell tools only. No named edit tools or further delegation; instructions forbid source changes. |
+| **Sidekick** | Execute a fully specified change, file lookup or command; return results and blockers. | Tools depend on its caller (below). Cannot spawn workers. |
+| **Advisor** · optional | Challenge a specific decision and explain tradeoffs. | Read-only; delegates checks to its own sidekicks. No direct shell, web or edits. |
+| **Reviewer** · optional | Review a frozen change snapshot **when you explicitly ask**. Report findings; the lead owns fixes. | Bounded reads, installed review guidance and its own sidekick. No direct shell, web or edits. |
+
+**One sidekick role, one model selection; separate caller-owned conversations:**
+- **Called by the lead:** file tools, shell/Git/tests and host-supported retrieval; can implement scoped changes.
+- **Called by an advisor/reviewer:** read/search/shell tools for evidence checks; no named editing tools, and instructions forbid source changes.
 
 ```mermaid
 flowchart LR
     U[You: choose models and task] --> L[Lead: understand, decide, deliver]
-    L --> S[Coding sidekicks: execute scoped work]
+    L --> S[Sidekick: scoped execution]
     L -. Consult .-> A[Advisor: assess tradeoffs]
     L -. Requested review .-> R[Reviewer: inspect frozen change]
-    A --> AE[Advisor-owned evidence workers]
-    R --> RE[Reviewer-owned evidence worker]
+    A --> AE[Sidekick: advisor-owned checks]
+    R --> RE[Sidekick: reviewer-owned checks]
 ```
 
-The lead reads and interprets source itself. Lookup workers return locations; coding workers receive exact scope and checks. Reuse a worker for related tasks, with one active task per conversation; independent workers can run in parallel.
+The lead reads and interprets source itself. For lookups, sidekicks return locations; for implementation, they receive exact scope and checks. Reuse a worker for related tasks, with one active task per conversation; independent workers can run in parallel.
 
 ## How restrictions work
 
@@ -36,7 +39,7 @@ The lead reads and interprets source itself. Lookup workers return locations; co
 | :--- | :--- |
 | **Read bounds** | Lead/advisor/reviewer reads require explicit ranges of at most **350 lines**. |
 | **Role tools** | Blocks restricted shell/search/web calls; read-only workers cannot use named editing tools. |
-| **Ownership** | Callers can resume, inspect, message or cancel only their own workers. Evidence workers cannot be borrowed as coding workers. |
+| **Ownership** | Callers can resume, inspect, message or cancel only their own sidekicks. The lead cannot borrow an advisor/reviewer's sidekick for coding. |
 | **Model selection** | Delegation validates user-selected configuration and rejects unauthorized model overrides. |
 
 | Host | Enforcement | Delegation & live controls |
