@@ -4,7 +4,7 @@
 
 ## 1. Install
 
-You need **Copilot CLI** and Git HTTPS credentials with access to this private repository. Copilot's model login alone may not authenticate Git downloads.
+You need **Copilot CLI** and **Git**. This repository is public; downloading the plugin requires no repository credentials. Sign in to Copilot to use your models.
 
 ```sh
 copilot plugin install bluetripod/fusion-big-boss
