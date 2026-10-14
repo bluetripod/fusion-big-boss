@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { readFileSync } from "node:fs"
 import { resolve as resolvePath } from "node:path"
 import fusion, { parseModel, parseModelsCommand } from "./index"
@@ -16,6 +16,7 @@ function harness() {
   const transcripts = new Map<string, any[]>()
   const running = new Set<string>()
   const inbox = new Map<string, string[]>()
+  const deliveries: any[] = []
   const events: Array<{ value: any; done: () => void }> = []
   let wake = () => {}
   const emit = (value: any) => new Promise<void>(done => { events.push({ value, done }); wake() })
@@ -86,7 +87,9 @@ function harness() {
       switchAgent: async ({ sessionID, agent }: any) => { sessions[sessionID].agent = agent; if (agent !== "fusion") sessions[sessionID].model = { providerID: "openai", id: "gpt-5.6-luna" } },
       prompt: async (input: any) => { prompts.push(input) },
       context: async ({ sessionID }: any) => transcripts.get(sessionID) ?? [],
-      synthetic: async ({ sessionID, text, resume }: any) => {
+      synthetic: async (input: any) => {
+        const { sessionID, text, resume } = input
+        deliveries.push(input)
         inbox.set(sessionID, [...inbox.get(sessionID) ?? [], text])
         if (resume !== false) running.add(sessionID)
         return { id: "message-1" }
@@ -108,7 +111,7 @@ function harness() {
     toolHooks.get("execute.before")({ tool: "subagent", agent: "fusion", sessionID,
       input: { agent: "fusion-reviewer", background: true, prompt: "Frozen source packet", ...input } })
   return { ctx, tools, commands, hooks, toolHooks, store, switched, waited, prompts, models, sessions, configure, inspect, patch, validate, disable, review,
-    transcripts, running, inbox, emit }
+    transcripts, running, inbox, deliveries, emit }
 }
 
 function pause() {
@@ -117,6 +120,188 @@ function pause() {
   const completed = new Promise<void>((resolve) => { release = resolve })
   return { waiting, release, hold: async () => { entered(); await completed } }
 }
+
+async function supervisionHarness() {
+  const h = harness()
+  const timers = new Set<unknown>()
+  let tick: (() => unknown) | undefined
+  const schedule = spyOn(globalThis, "setInterval").mockImplementation(((callback: () => unknown) => {
+    tick = callback
+    const timer = { unref() {} }
+    timers.add(timer)
+    return timer
+  }) as any)
+  const unschedule = spyOn(globalThis, "clearInterval").mockImplementation(((timer: unknown) => { timers.delete(timer) }) as any)
+  try {
+    const cleanup = await fusion.setup(h.ctx as any)
+    return { ...h, timers,
+      tick: async () => { expect(tick).toBeDefined(); await tick!() },
+      status: (sessionID: string, type: string) => h.emit({ type: "session.status", created: Date.now(), data: { sessionID, status: { type } } }),
+      context: async (sessionID = "parent") => {
+        const event = { sessionID, agent: h.sessions[sessionID].agent, model: h.sessions[sessionID].model, system: [] as any[], tools: {} }
+        await h.hooks.get("context")(event)
+        return event.system
+      },
+      cleanup: async () => {
+        try { await cleanup?.() }
+        finally { schedule.mockRestore(); unschedule.mockRestore() }
+      },
+    }
+  } catch (error) {
+    schedule.mockRestore(); unschedule.mockRestore()
+    throw error
+  }
+}
+
+describe("Fusion automatic supervision", () => {
+  test("groups idle-owner delivery and replaces active-owner context without queueing", async () => {
+    const h = await supervisionHarness()
+    try {
+      await h.configure("parent", "openai/gpt-6-sol#high", "openai/gpt-5.6-luna")
+      for (const sessionID of ["child", "duplicate"]) {
+        await h.hooks.get("prompt")({ sessionID })
+        await h.status(sessionID, "busy")
+      }
+      await h.status("parent", "idle")
+      await h.tick()
+      expect(h.deliveries).toHaveLength(1)
+      expect(h.deliveries[0]).toMatchObject({ sessionID: "parent", delivery: "queue", resume: true })
+      expect(h.inbox.get("parent")![0]).toContain("child")
+      expect(h.inbox.get("parent")![0]).toContain("duplicate")
+
+      await h.status("parent", "busy")
+      h.transcripts.set("child", [{ type: "assistant", content: [{ type: "tool", name: "old-command", state: { status: "running" } }] }])
+      await h.tick()
+      h.transcripts.set("child", [{ type: "assistant", content: [{ type: "tool", name: "latest-command", state: { status: "running" } }] }])
+      await h.tick()
+      expect(h.inbox.get("parent")).toHaveLength(1)
+      const baseline = await h.context()
+      const next = await h.context()
+      expect(baseline.length).toBe(next.length + 1)
+      expect(baseline[0].text).toContain("latest-command")
+      expect(baseline[0].text).not.toContain("old-command")
+    } finally { await h.cleanup() }
+  })
+
+  test("requests quiet busy workers once per activity interval, never retry or unknown workers", async () => {
+    const h = await supervisionHarness()
+    try {
+      await h.configure("parent", "openai/gpt-6-sol#high", "openai/gpt-5.6-luna")
+      await h.hooks.get("prompt")({ sessionID: "child" })
+      await h.status("parent", "busy")
+      await h.tick(); await h.tick()
+      expect(h.inbox.has("child")).toBe(false)
+      await h.status("child", "retry")
+      await h.tick(); await h.tick()
+      expect(h.inbox.has("child")).toBe(false)
+      await h.status("child", "busy")
+      await h.emit({ type: "session.text.delta", data: { sessionID: "child" } })
+      await h.tick()
+      expect(h.inbox.has("child")).toBe(false)
+      await h.tick()
+      expect(h.deliveries).toHaveLength(1)
+      expect(h.deliveries[0]).toMatchObject({ sessionID: "child", delivery: "steer", resume: false })
+      expect(h.running.has("child")).toBe(false)
+      await h.tick()
+      expect(h.inbox.get("child")).toHaveLength(1)
+      await h.emit({ type: "session.text.delta", data: { sessionID: "child" } })
+      await h.tick()
+      expect(h.inbox.get("child")).toHaveLength(1)
+      await h.tick()
+      expect(h.inbox.get("child")).toHaveLength(2)
+    } finally { await h.cleanup() }
+  })
+
+  test("drops completed summaries, clears stale idle on resume and rejects changed ownership", async () => {
+    const h = await supervisionHarness()
+    try {
+      await h.configure("parent", "openai/gpt-6-sol#high", "openai/gpt-5.6-luna")
+      const baseline = await h.context()
+      for (const ending of ["session.execution.succeeded", "session.status"]) {
+        await h.hooks.get("prompt")({ sessionID: "child" })
+        await h.status("child", "busy")
+        await h.tick()
+        if (ending === "session.status") { await h.status("child", "idle"); await h.tick() }
+        else await h.emit({ type: ending, data: { sessionID: "child" } })
+        expect((await h.context()).length).toBe(baseline.length)
+        await h.tick()
+        expect(h.deliveries).toHaveLength(0)
+        expect(h.timers.size).toBe(0)
+      }
+      await h.status("child", "idle")
+      await h.hooks.get("prompt")({ sessionID: "child" })
+      await h.tick(); await h.tick()
+      expect(h.timers.size).toBe(1)
+      expect(h.deliveries).toHaveLength(0)
+      await h.status("child", "busy")
+      await h.tick(); await h.tick()
+      expect(h.deliveries[0]).toMatchObject({ sessionID: "child", resume: false })
+
+      h.deliveries.length = 0
+      h.sessions.child.parentID = "unrelated"
+      await h.status("parent", "idle")
+      await h.status("otherSidekick", "busy")
+      await h.status("foreignAdvisor", "busy")
+      await h.tick(); await h.tick()
+      expect(h.deliveries).toHaveLength(0)
+      expect(h.timers.size).toBe(0)
+    } finally { await h.cleanup() }
+  })
+
+  test("routes advisor and reviewer evidence to their own owner, separately from lead summaries", async () => {
+    const h = await supervisionHarness()
+    try {
+      await h.configure("parent", "openai/gpt-6-sol#high", "openai/gpt-5.6-luna", "github-copilot/claude-opus-5.5")
+      await h.patch("parent", { reviewer: "github-copilot/claude-opus-5.5" })
+      for (const sessionID of ["advisor", "reviewer"]) {
+        await h.hooks.get("prompt")({ sessionID })
+        h.sessions[`${sessionID}-evidence`] = { ...h.sessions.child, id: `${sessionID}-evidence`, parentID: sessionID }
+        await h.hooks.get("prompt")({ sessionID: `${sessionID}-evidence` })
+        await h.status(sessionID, "busy")
+        await h.status(`${sessionID}-evidence`, "busy")
+      }
+      await h.status("parent", "idle")
+      await h.tick()
+      expect(h.deliveries).toHaveLength(1)
+      expect(h.deliveries[0]).toMatchObject({ sessionID: "parent", resume: true })
+      expect(h.deliveries[0].text).not.toContain("-evidence")
+      for (const sessionID of ["advisor", "reviewer"]) {
+        const summary = (await h.context(sessionID))[0].text
+        expect(summary).toContain(`${sessionID}-evidence`)
+        expect(summary).not.toContain(`${sessionID === "advisor" ? "reviewer" : "advisor"}-evidence`)
+        expect(h.inbox.has(sessionID)).toBe(false)
+      }
+      for (const sessionID of ["advisor", "reviewer"]) await h.status(sessionID, "idle")
+      await h.tick()
+      for (const sessionID of ["advisor", "reviewer"]) {
+        expect(h.deliveries.some(item => item.sessionID === sessionID && item.resume === true
+          && item.text.includes(`${sessionID}-evidence`))).toBe(true)
+      }
+    } finally { await h.cleanup() }
+  })
+
+  test("cleanup clears the interval and prevents deferred samples delivering or restarting workers", async () => {
+    const h = await supervisionHarness()
+    const barrier = pause()
+    let sampling: Promise<void> | undefined
+    try {
+      await h.configure("parent", "openai/gpt-6-sol#high", "openai/gpt-5.6-luna")
+      await h.hooks.get("prompt")({ sessionID: "child" })
+      await h.status("child", "busy")
+      await h.status("parent", "idle")
+      h.ctx.session.context = async () => { await barrier.hold(); return [] }
+      sampling = h.tick()
+      await barrier.waiting
+      await h.cleanup()
+      expect(h.timers.size).toBe(0)
+      barrier.release()
+      await sampling
+      await h.tick()
+      expect(h.deliveries).toHaveLength(0)
+      expect(h.running.size).toBe(0)
+    } finally { barrier.release(); await sampling; await h.cleanup() }
+  })
+})
 
 describe("Fusion sessions", () => {
   test("live controls report partial output, steer without restarting and cancel only the owned worker", async () => {

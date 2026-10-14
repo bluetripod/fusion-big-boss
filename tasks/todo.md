@@ -1,5 +1,11 @@
 # Three-role Fusion tasks
 
+## Automatic worker supervision
+
+- [x] Shared monitor and prompt-guided concise updates without status truncation, tested with controlled time; a scratch mutation confirms repeated requests are caught.
+- [x] OpenCode, Pi and Copilot lifecycle integration and focused tests.
+- [x] General guidance, generated copies and full checks: 159 Node, 100 OpenCode, 105 Pi tests, both typechecks, offline packaging and briefing drift passed. Final Copilot continuation regression checked separately.
+
 ## Pi/Copilot parity with OpenCode
 
 - [x] Pi prompt/context/capabilities and worker scheduling/lifecycle alignment: 97 SDK/behavior tests and typecheck passed, including navigation-time first-history persistence.

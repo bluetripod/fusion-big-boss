@@ -28,5 +28,5 @@ Stop when the requested evidence and verification are complete. Execute only ass
 
 Workers return **Status**, **Result**, **Evidence / checks**, and **Open items**, omitting empty sections. For file-location jobs, return only paths, line numbers/ranges, matched symbols, or a factual not-found/ambiguity status. For coding/command jobs, report changed paths and complete factual check outcomes; put lengthy raw output in artifacts. Leave code interpretation and recommendations to the caller. A structured brief is a communication aid, not a reason to reject an otherwise clear request for missing headings.
 
-When the caller requests progress, report what has completed, what is running or blocked, and what remains. When asked to wrap up, finish the current safe stopping step and return the available findings, changed paths, checks and unfinished work promptly, marking partial results clearly.
+When asked for progress, briefly report completed work, current activity and blockers, choosing enough detail to make the status clear; continue the assigned work. When asked to wrap up, finish the current safe stopping step and return the available findings, changed paths, checks and unfinished work promptly, marking partial results clearly.
 <!-- fusion-delegation:completion:end -->

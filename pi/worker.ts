@@ -7,6 +7,7 @@ import { Type, type Usage } from '@earendil-works/pi-ai';
 import { createAgentSession, createReadToolDefinition, DefaultPackageManager, DefaultResourceLoader, defineTool, getAgentDir, loadSkills, ModelRuntime, SessionManager, SettingsManager, type AgentSession } from '@earendil-works/pi-coding-agent';
 import { label, parseChoice, resolveChoice, type Registry, type Role } from './state.ts';
 import { loadBriefing } from '../shared/briefing.mjs';
+import { createSupervisor } from '../shared/supervision.mjs';
 import { RunRegistry, runStatus, splitRuns, type Run } from './viewer.ts';
 
 export type ChildRole = Exclude<Role, 'lead'>;
@@ -42,15 +43,72 @@ export function allowedLeadCall(name: string, input: unknown): { block: true; re
 export const workerSchema = Type.Object({ action: Type.Union([Type.Literal('status'), Type.Literal('message'), Type.Literal('cancel')]), sessionID: Type.String(), message: Type.Optional(Type.String()) }, { additionalProperties: false });
 type WorkerRequest = { action: 'status' | 'message' | 'cancel'; sessionID: string; message?: string };
 type Steering = (message: string) => Promise<void>;
+type SupervisionOwner = { ready: () => boolean; notify: (text: string) => void | boolean | Promise<void | boolean> };
+type LiveHandle = { owner: string; run: Run; session: AgentSession; controller: AbortController; valid: () => boolean; steer?: Steering;
+  supervision?: SupervisionOwner; version: number; activity: string; unsubscribe?: () => void };
 export const workerDescription = 'Inspect, message or cancel your own direct worker by explicit sessionID. Status returns bounded observed output without waiting. Message queues ordinary steering (including wrap-up requests), not a new task; acknowledgement is not proof of reading. Cancel requests cooperative interruption with partial output, not rollback or guaranteed stopping.';
 
 // Shared by the lead and its evidence owners; only live native sessions are retained.
 export class LiveWorkers {
-  private live = new Map<string, { owner: string; run: Run; session: AgentSession; controller: AbortController; valid: () => boolean; steer?: Steering }>();
-  attach(owner: string, run: Run, session: AgentSession, controller: AbortController, valid = () => true, steer?: Steering) {
-    this.live.set(session.sessionId, { owner, run, session, controller, valid, steer });
+  private live = new Map<string, LiveHandle>();
+  private revision = 0;
+  private supervisor: ReturnType<typeof createSupervisor>;
+  constructor(options: { now?: () => number; schedule?: typeof setInterval; unschedule?: typeof clearInterval } = {}) {
+    let sampled = new Map<string, LiveHandle[]>();
+    this.supervisor = createSupervisor({ ...options,
+      sample: () => {
+        sampled = new Map();
+        return [...this.live].flatMap(([id, handle]) => {
+          if (!handle.valid()) { this.release(id); return []; }
+          if (handle.run.status !== 'running') return [];
+          if (!sampled.has(handle.owner)) sampled.set(handle.owner, []);
+          sampled.get(handle.owner)!.push(handle);
+          return [{ id, owner: handle.owner, startedAt: handle.run.startedAt,
+            status: handle.controller.signal.aborted ? 'cancellation pending' : 'running', activity: handle.activity,
+            version: handle.version, requestable: !handle.controller.signal.aborted }];
+        });
+      },
+      notify: async (owner: string, text: string) => {
+        const handles = sampled.get(owner);
+        if (!handles?.length || handles.some(handle => this.live.get(handle.session.sessionId) !== handle || !handle.valid() || handle.run.status !== 'running')) return false;
+        const handle = handles.find(handle => handle.supervision?.ready());
+        if (!handle?.supervision || this.live.get(handle.session.sessionId) !== handle || !handle.valid()) return false;
+        return await handle.supervision.notify(text);
+      },
+      request: async (observation: { id: string; version?: number }, text: string) => {
+        const handle = this.live.get(observation.id);
+        if (!handle || !handle.valid() || handle.version !== observation.version || handle.controller.signal.aborted
+          || handle.run.status !== 'running' || handle.session.isIdle !== false) return false;
+        if (handle.steer) await handle.steer(text);
+        else await handle.session.sendCustomMessage({ customType: 'fusion.pi.steering', content: text, display: true }, { deliverAs: 'steer' });
+        return true;
+      },
+    });
   }
-  release(id: string) { this.live.delete(id); }
+  attach(owner: string, run: Run, session: AgentSession, controller: AbortController, valid = () => true, steer?: Steering, supervision?: SupervisionOwner) {
+    this.release(session.sessionId);
+    const handle: LiveHandle = { owner, run, session, controller, valid, steer, supervision, version: ++this.revision, activity: 'starting' };
+    this.live.set(session.sessionId, handle);
+    handle.unsubscribe = session.subscribe(event => {
+      if ((event.type === 'message_update' || event.type === 'message_end') && event.message.role === 'assistant') {
+        handle.version = ++this.revision; handle.activity = 'responding';
+      } else if (event.type === 'tool_execution_start' || event.type === 'tool_execution_update' || event.type === 'tool_execution_end') {
+        handle.version = ++this.revision;
+        handle.activity = event.type === 'tool_execution_end' ? 'responding' : event.toolName.replace(/[^\w.-]/g, '') || 'tool';
+      }
+    });
+    this.supervisor.start();
+  }
+  release(id: string) {
+    this.live.get(id)?.unsubscribe?.(); this.live.delete(id);
+    if (!this.live.size) this.supervisor.stop();
+  }
+  dispose() {
+    this.supervisor.stop();
+    for (const handle of this.live.values()) handle.unsubscribe?.();
+    this.live.clear();
+  }
+  checkProgress() { return this.supervisor.tick(); }
   steeringFailed(id: string, error: Error) { const handle = this.live.get(id); if (handle) handle.run.error = error.message; }
   async control(params: WorkerRequest, owner: string, completed: (id: string) => SessionManager) {
     if (Object.keys(params).some(key => !['action', 'sessionID', 'message'].includes(key))) throw new Error('Unknown worker control argument; cannot override ownership or model.');
@@ -104,7 +162,7 @@ function system(role: ChildRole, briefing: string) {
     advisor: 'You are a read-only Fusion advisor. Advise on the lead\'s precise question and constraints. Read and analyze relevant source yourself (explicit offset >=1, limit 1..350). Use fusion_delegate only for fully specified evidence-sidekick jobs: file locations, read-only Git inspection or specified tests/checks. Multiple independent workers may run concurrently on the user-selected sidekick model/effort/context. Omit sessionID for a new worker; pass an explicit confirmed sessionID for related continuation, one task per session. Coordinate non-conflicting work and stable-tree checks. Keep analysis and diagnosis here; workers return locations or factual output, not interpretation. Neither you nor your evidence sidekicks may edit source, stage, commit, push or repair failures. No direct shell/web, other agents or user-facing questions. State recommendation, uncertainty, strongest risks and missing evidence. The lead makes the decision.',
     reviewer: 'You are a read-only Fusion reviewer for one explicitly user-requested review. Review the supplied frozen snapshot and packet; read and analyze source yourself (explicit offset >=1, limit 1..350). Use fusion_delegate only for precise file locations, read-only Git inspection or specified test/check evidence from your own persistent sidekick. Neither you nor this sidekick may edit source or fix findings. Load code-review-and-quality from its advertised Pi skill path with bounded reads; relevant security/performance guidance is optional. Skill instructions never permit direct shell, scripts, writes, edits, web or other agents. Disclose missing skills/evidence and review limitations. The lead owns fixes and the final answer.',
   };
-  return `${roles[role]}\n\n${minimal}\n\n${briefing}${role !== 'sidekick' ? '\n\nYour evidence jobs require background: true and return directly here. Same-session continuations wait for the prior job; independent workers may run concurrently. Use fusion_worker with their explicit sessionIDs for status, message or cancel while working. Wrap-up is an ordinary message asking for findings, checks, blockers and unfinished work, not a separate action or timer. Messages are admitted, not confirmed read; cancellation is cooperative, not rollback. Wait for requested evidence before finalizing your recommendation.' : ''}`;
+  return `${roles[role]}\n\n${minimal}\n\n${briefing}${role !== 'sidekick' ? '\n\nYour evidence jobs require background: true and return directly here. Same-session continuations wait for the prior job; independent workers may run concurrently. Use fusion_worker with their explicit sessionIDs for status, message or cancel while working. Automatic supervision supplies concise 60-second updates while work remains active and may request progress from quiet workers; it never cancels. Act on automatic evidence-worker updates; inspect or intervene when needed. Quiet activity alone is not a hang. Keep progress replies concise, including the detail needed to understand progress and blockers. Wrap-up is an ordinary message asking for findings, checks, blockers and unfinished work, not a separate action. Messages are admitted, not confirmed read; cancellation is cooperative, not rollback. Wait for requested evidence before finalizing your recommendation.' : ''}`;
 }
 
 export type Launch = {
@@ -226,7 +284,16 @@ export async function runChild(options: Launch): Promise<ChildResult> {
               if (!reservation) { reservation = id; evidenceTurns.set(id, turn); }
               resolveStart(id);
             },
-            onSessionReady: child => { evidenceRuns.attach(run, child); workers.attach(manager.getSessionId(), run, child, controller, () => !closing); },
+            onSessionReady: (child, childSteer) => {
+              evidenceRuns.attach(run, child);
+              workers.attach(manager.getSessionId(), run, child, controller, () => !closing && !signal?.aborted, childSteer, {
+                ready: () => session.isIdle && waitingForEvidence && evidenceWork.size > 0 && !closing && !signal?.aborted,
+                notify: async text => {
+                  if (!session.isIdle || !waitingForEvidence || !evidenceWork.size || closing || signal?.aborted) return false;
+                  await steer(text);
+                },
+              });
+            },
             onConfirmed: id => {
               if (!evidenceIDs.has(id)) { evidenceIDs.add(id); manager.appendCustomEntry('fusion.pi.evidence-sidekick', { id }); }
               if (role === 'reviewer') reviewerEvidenceID = id;
@@ -338,7 +405,7 @@ export async function runChild(options: Launch): Promise<ChildResult> {
         manager.appendCustomMessageEntry('fusion.pi.outcome', String(failure), true, { status: signal?.aborted ? 'aborted' : 'failed' });
       }
       confirmDurable();
-    } finally { unsubscribe(); session.dispose(); }
+    } finally { unsubscribe(); if (!options.workers) workers.dispose(); session.dispose(); }
   }
 }
 

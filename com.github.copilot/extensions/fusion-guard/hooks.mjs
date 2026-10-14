@@ -6,6 +6,7 @@ import { advisorRoleForLead, canonicalFusionRole, fusionAgentIdentity } from './
 import { createCommands } from './commands.mjs';
 import { roleAvailability } from './availability.mjs';
 import { createCancelTool } from './cancel.mjs';
+import { createWorkerSupervision } from './supervision.mjs';
 
 const COMMAND_TOOLS = new Set(['bash', 'powershell', 'local_shell', 'write_bash', 'write_powershell']);
 const gitFromInput = (input) => COMMAND_TOOLS.has(input.toolName)
@@ -86,6 +87,7 @@ export function createHooks(getSession, inspect = inspectTextTarget, roles = cre
   const cancellations = new Map();
   const writes = new Map();
   let subscriptions = [];
+  let supervision;
 
   const sameTask = (a, b) => a?.id === b?.id && a?.toolCallId === b?.toolCallId && a?.startedAt === b?.startedAt;
   const cancellationFor = task => {
@@ -98,6 +100,7 @@ export function createHooks(getSession, inspect = inspectTextTarget, roles = cre
     const session = getSession();
     const root = session?.sessionId;
     if (attachment !== session || rootSessionId !== root) {
+      supervision?.stop();
       attachment = session;
       rootSessionId = root;
       lastKnownFusion = undefined;
@@ -116,6 +119,8 @@ export function createHooks(getSession, inspect = inspectTextTarget, roles = cre
         writes.delete(event.data?.toolCallId);
         if (event.data?.success && record && cancellations.get(record.task.id) === record) cancellations.delete(record.task.id);
       })] : [];
+      supervision = createWorkerSupervision(getSession, roles, task => Boolean(cancellationFor(task)));
+      supervision.start();
     }
     return session;
   }
@@ -190,6 +195,17 @@ export function createHooks(getSession, inspect = inspectTextTarget, roles = cre
     }
   };
   return {
+    dispose: () => {
+      supervision?.stop();
+      subscriptions.forEach(off => off());
+      subscriptions = [];
+    },
+    onSessionEnd: (input, invocation) => {
+      if (input.sessionId !== rootSessionId || invocation.sessionId !== rootSessionId) return;
+      supervision?.stop();
+      subscriptions.forEach(off => off());
+      subscriptions = [];
+    },
     beginCancellation: (session, task) => {
       if (getSession() !== session || attachment !== session) throw new Error('Fusion session is no longer attached.');
       if (cancellationFor(task)?.pending) throw new Error('Worker cancellation is already pending; inspect its status before retrying.');

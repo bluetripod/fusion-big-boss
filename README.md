@@ -58,10 +58,13 @@ The lead reads and interprets source itself. For lookups, sidekicks return locat
 
 While work runs, callers can **inspect progress, send messages and request cancellation**. “Wrap up with findings and unfinished checks” is an ordinary message. Cancellation preserves history and edits; it is cooperative, not rollback.
 
+**Automatic supervision:** every minute, Fusion checks active workers and sends each owner a grouped update. Prompts ask workers to be concise while preserving useful detail; status messages are not truncated. Quiet workers receive one progress request until activity changes; the owner decides whether to intervene. Status checks use no model calls; processing updates can use tokens.
+
 ### Host differences
 
 - **Context:** OpenCode/Pi offer per-role local context budgets. Copilot currently uses native `default` / `long_context` tiers. Budgets are not spending caps.
 - **Continuation:** OpenCode/Pi queue same-worker follow-ups. Copilot's `write_agent` steers a running worker or continues an idle one; terminal tasks cannot resume.
+- **Supervision delivery:** OpenCode supplies the latest update at a model boundary or wakes an idle owner; Pi delivers on a check when its owner is idle. Copilot coalesces native queued messages; foreground advisors cannot receive native supervision messages.
 - **Tools & lifecycle:** Pi has no native web-search/fetch tools, disables child extensions, and aborts/drains workers on navigation. Adapter guides cover installation, skills and other host limits.
 
 ## Development

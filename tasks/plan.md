@@ -1,5 +1,23 @@
 # Three-role Fusion
 
+## Completed: concise automatic worker supervision
+
+1. Add a shared 60-second monitor with grouped updates and deduplicated progress
+   requests. Verify fake-clock cadence, ownership, complete status and cleanup.
+2. Connect existing native lifecycle/status/message routes in each adapter.
+   Verify owner routing, completion races and detachment using existing fixtures.
+3. Add brief general supervision guidance, sync copies, and run `npm run check`
+   with the installed Copilot SDK. Record any native delivery limitations.
+
+Approved behavior: [worker-supervision-spec.md](worker-supervision-spec.md).
+
+Verification: full installed-SDK `npm run check` passed (159 Node, 100 OpenCode,
+105 Pi tests, both typechecks, packaging and briefing drift). A follow-up Copilot
+continuation regression is checked with the targeted Copilot suite. Controlled
+clocks/fake providers verify delivery; live-provider inference was not run.
+Copilot foreground owners cannot receive task messages; Pi delivers on a check
+when the owner is idle. See the README for concise host differences.
+
 ## Completed: Pi and Copilot behavioral parity
 
 User approved making Pi/Copilot consistent with the working OpenCode adapter as

@@ -3,6 +3,7 @@ import { FusionRPC } from "./rpc"
 import { loadBriefing } from "../shared/briefing.mjs"
 import { splitContext, withContext } from "../shared/context.mjs"
 import { baseModel, contextID, contextModels } from "./context"
+import { createSupervisor } from "../shared/supervision.mjs"
 
 type ModelRef = { providerID: string; id: string; variant?: string }
 type Pair = { lead: ModelRef; sidekick: ModelRef; advisor?: ModelRef; reviewer?: ModelRef; adhoc?: ModelRef }
@@ -123,6 +124,9 @@ export default Plugin.define({
     const configuring = new Set<string>()
     const workerStatus = new Map<string, { status: string; observedAt: number }>()
     const cancellations = new Map<string, { state: string; error?: string }>()
+    const watched = new Map<string, { owner: string; startedAt: number; revision: number }>()
+    const pendingProgress = new Map<string, string>()
+    let disposed = false
     let recentWrite = Promise.resolve()
 
     async function recentsFor(last?: Choices): Promise<Recents> {
@@ -339,6 +343,87 @@ export default Plugin.define({
       void ctx.session.interrupt({ sessionID, resume: false }).then(reply => {
         result.state = reply.interrupted ? "interrupted" : "idle"
       }, error => { result.state = "failed"; result.error = error instanceof Error ? error.message : String(error) })
+    }
+
+    function forgetWorker(id: string) {
+      const worker = watched.get(id)
+      if (worker) pendingProgress.delete(worker.owner)
+      watched.delete(id)
+      pendingProgress.delete(id)
+      if (!watched.size) supervision.stop()
+    }
+
+    const hasWorkers = (owner: string) => [...watched.values()].some(worker => worker.owner === owner)
+
+    async function progressOwner(owner: string) {
+      if (disposed || cancellations.has(owner) && cancellations.get(owner)?.state !== "failed") return false
+      const session = await ctx.session.get({ sessionID: owner })
+      if (!session || !["fusion", "fusion-advisor", "fusion-reviewer"].includes(session.agent ?? "")) return false
+      if (session.agent !== "fusion" && !watched.has(owner)) return false
+      for (const [id, worker] of watched) {
+        if (worker.owner !== owner) continue
+        try {
+          const { root } = await ownedWorker(owner, session.agent!, id)
+          if (!disposed && watched.get(id) === worker && root.agent === "fusion") return true
+        } catch { /* Missing ownership never authorizes delivery. */ }
+      }
+      return false
+    }
+
+    const supervision = createSupervisor({
+      sample: async () => {
+        const rows = []
+        for (const [id, worker] of watched) {
+          const owner = await ctx.session.get({ sessionID: worker.owner })
+          if (disposed || watched.get(id) !== worker) continue
+          if (!owner || !await progressOwner(worker.owner)) { forgetWorker(id); continue }
+          try { await ownedWorker(worker.owner, owner.agent!, id) }
+          catch { forgetWorker(id); continue }
+          const state = workerStatus.get(id)?.status
+          if (state === "idle" && !hasWorkers(id)) { forgetWorker(id); continue }
+          const messages = await ctx.session.context({ sessionID: id })
+          if (disposed || watched.get(id) !== worker) continue
+          const recent = messages.slice(-12).filter(message => message.type === "assistant")
+          const last = recent.at(-1)
+          const tool = last && [...last.content].reverse().find(part => part.type === "tool")
+          const cancelling = cancellations.has(id) && cancellations.get(id)?.state !== "failed"
+          rows.push({ id, owner: worker.owner, startedAt: worker.startedAt,
+            status: cancelling ? "cancellation pending" : state === "busy" ? "running" : state === "idle" ? "waiting for workers" : state ?? "unknown",
+            activity: tool?.type === "tool" ? `${tool.name}: ${tool.state.status}` : recent.length ? "responding" : "starting",
+            version: state ? `${worker.revision}:${JSON.stringify(recent)}` : undefined,
+            requestable: state === "busy" && !cancelling })
+        }
+        return rows
+      },
+      notify: async (owner: string, text: string) => {
+        if (!await progressOwner(owner) || disposed) return false
+        if (workerStatus.get(owner)?.status !== "idle") {
+          // Replace, rather than queue, summaries while the owner is busy.
+          pendingProgress.set(owner, text)
+          return false
+        }
+        pendingProgress.delete(owner)
+        await ctx.session.synthetic({ sessionID: owner, text, description: "Fusion worker progress", delivery: "queue", resume: true })
+        return true
+      },
+      request: async (row: { id: string; owner: string }, text: string) => {
+        const worker = watched.get(row.id)
+        if (!worker || worker.owner !== row.owner || !await progressOwner(row.owner)) return false
+        const owner = await ctx.session.get({ sessionID: row.owner })
+        if (!owner) return false
+        await ownedWorker(row.owner, owner.agent!, row.id)
+        if (disposed || watched.get(row.id) !== worker || workerStatus.get(row.id)?.status !== "busy"
+          || cancellations.has(row.id) && cancellations.get(row.id)?.state !== "failed") return false
+        await ctx.session.synthetic({ sessionID: row.id, text, description: "Fusion progress request", delivery: "steer", resume: false })
+        return true
+      },
+    })
+
+    function watchWorker(id: string, owner: string) {
+      if (disposed || watched.has(id)) return
+      workerStatus.delete(id)
+      watched.set(id, { owner, startedAt: Date.now(), revision: 0 })
+      supervision.start()
     }
 
     await ctx.tool.transform(editor => editor.add({
@@ -680,6 +765,11 @@ export default Plugin.define({
 
     // Preserve OpenCode's normal coding prompt; a nonempty agent.system would replace it.
     await ctx.session.hook("context", async (event) => {
+      const progress = pendingProgress.get(event.sessionID)
+      if (progress) {
+        pendingProgress.delete(event.sessionID)
+        if (await progressOwner(event.sessionID) && !disposed) event.system.push({ type: "text", text: progress })
+      }
       if (!["fusion", "fusion-advisor", "fusion-reviewer"].includes(event.agent)) delete event.tools?.fusion_worker
       if (event.agent === "fusion-sidekick") {
         const tree = await fusionTree(event.sessionID, event.agent)
@@ -705,7 +795,7 @@ export default Plugin.define({
         if (!tree || tree.caller.parentID !== tree.root.id) throw new Error("Advisor must be a direct Fusion lead child.")
         event.system.push({ type: "text", text: advisorInstructions })
         event.system.push({ type: "text", text: "Use native subagent(agent: fusion-sidekick, background: true) only for precise evidence jobs. Omit sessionID for each independent worker, retain each confirmed ID for related follow-ups, and never borrow another caller's worker." })
-        event.system.push({ type: "text", text: "Use fusion_worker with your own evidence worker sessionID for status, steering messages (including wrap-up requests), or cancellation while it runs. Do not routinely poll." })
+        event.system.push({ type: "text", text: "Act on automatic updates from your evidence workers; use fusion_worker for detail or intervention. Quiet activity alone is not a hang. Keep progress replies concise, including the detail needed to understand progress and blockers." })
         for (const tool of Object.keys(event.tools ?? {})) if (!["read", "subagent", "fusion_worker"].includes(tool)) delete event.tools[tool]
         return
       }
@@ -777,6 +867,7 @@ export default Plugin.define({
         await requireReviewerSetup(tree.root.id, pair.reviewer)
         await ctx.storage.set(reviewKey(child.id), { root: tree.root.id })
         await requireReviewerSetup(tree.root.id, pair.reviewer)
+        watchWorker(child.id, child.parentID)
         return
       }
       if (child.agent === "fusion-advisor") {
@@ -785,6 +876,7 @@ export default Plugin.define({
         if (!child.model || !sameModel(child.model, pair.advisor)) {
           await ctx.session.switchModel({ sessionID: child.id, model: pair.advisor })
         }
+        watchWorker(child.id, child.parentID)
         return
       }
       await requireAvailable(pair.sidekick, "sidekick")
@@ -815,6 +907,7 @@ export default Plugin.define({
         } else await ctx.storage.set(sidekickOwnerKey(child.id), parent)
         const cancellation = cancellations.get(parent)
         if (cancellation && cancellation.state !== "failed") throw new Error("Worker owner cancellation was requested during admission.")
+        watchWorker(child.id, parent)
       } catch (error) {
         if (singleton && !owner) claimedChild.delete(parent)
         const reason = error instanceof Error ? error.message : String(error)
@@ -826,14 +919,32 @@ export default Plugin.define({
       try {
         for await (const event of ctx.event.subscribe({ signal: events.signal })) {
           if (event.type === "server.connected") workerStatus.clear()
-          if (event.type === "session.status") workerStatus.set(event.data.sessionID, { status: event.data.status.type, observedAt: event.created })
-          if (event.type === "session.deleted") { workerStatus.delete(event.data.sessionID); cancellations.delete(event.data.sessionID) }
+          if (event.type === "session.status") {
+            workerStatus.set(event.data.sessionID, { status: event.data.status.type, observedAt: event.created })
+            if (event.data.status.type === "idle" && !hasWorkers(event.data.sessionID)) forgetWorker(event.data.sessionID)
+          }
+          if (event.type === "session.text.delta" || event.type === "session.reasoning.delta"
+            || event.type === "session.tool.input.delta" || event.type === "session.tool.progress") {
+            const worker = watched.get(event.data.sessionID)
+            if (worker) worker.revision++
+          }
+          if (event.type === "session.execution.succeeded" && !hasWorkers(event.data.sessionID)) forgetWorker(event.data.sessionID)
+          if (event.type === "session.execution.failed" || event.type === "session.execution.interrupted") {
+            forgetWorker(event.data.sessionID)
+            for (const [id, worker] of watched) if (worker.owner === event.data.sessionID) forgetWorker(id)
+          }
+          if (event.type === "session.deleted") {
+            workerStatus.delete(event.data.sessionID); cancellations.delete(event.data.sessionID)
+            forgetWorker(event.data.sessionID)
+            for (const [id, worker] of watched) if (worker.owner === event.data.sessionID) forgetWorker(id)
+          }
         }
       } finally {
         // A disconnected stream cannot establish current status from old observations.
         workerStatus.clear()
+        supervision.stop(); watched.clear(); pendingProgress.clear()
       }
     })().catch(() => { workerStatus.clear() })
-    return async () => { events.abort(); await observing }
+    return async () => { disposed = true; supervision.stop(); watched.clear(); pendingProgress.clear(); events.abort(); await observing }
   },
 })

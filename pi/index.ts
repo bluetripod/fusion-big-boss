@@ -96,6 +96,7 @@ export function createFusion(pi: ExtensionAPI, launch: (options: Launch) => Retu
   const history = (ctx: ExtensionContext) => new History(agentDir, ctx.cwd);
   async function abortAll() {
     generation++;
+    workers.dispose();
     for (const controllers of inFlight.values()) for (const controller of controllers) controller.abort();
     await Promise.allSettled([...running]);
     viewer.clear();
@@ -227,7 +228,7 @@ export function createFusion(pi: ExtensionAPI, launch: (options: Launch) => Retu
 
   pi.on('before_agent_start', async (event, ctx) => {
     if (!active(ctx)) return;
-    event.systemPromptOptions.sections['fusion_role'] = `${leadPrompt}\n\n${(await briefing).full}\n\nUse fusion_worker to inspect, message or cancel your own running workers by confirmed sessionID. Wrap-up is an ordinary message asking for findings, changed paths, checks, blockers and unfinished work; there is no special action or timer. Sidekick and reviewer delegation requires background: true. Same-session continuations wait for the prior task; independent reviewers may run concurrently. Use background: true for advisor consultations when you need to retain control; foreground remains available. Messages are admitted, not confirmed read; cancellation is cooperative, not rollback.`;
+    event.systemPromptOptions.sections['fusion_role'] = `${leadPrompt}\n\n${(await briefing).full}\n\nUse fusion_worker to inspect, message or cancel your own running workers by confirmed sessionID. Automatic supervision supplies concise 60-second updates while work remains active and may request progress from quiet workers; it never cancels. Wrap-up is an ordinary message asking for findings, changed paths, checks, blockers and unfinished work; there is no special action. Sidekick and reviewer delegation requires background: true. Same-session continuations wait for the prior task; independent reviewers may run concurrently. Use background: true for advisor consultations when you need to retain control; foreground remains available. Messages are admitted, not confirmed read; cancellation is cooperative, not rollback.`;
     // This SDK hook cannot cancel a start; never repair cap drift by mutating a streaming model.
     try { await restoreContext(ctx); checkLead(ctx, current(ctx).setup!.lead); }
     catch (error) { ctx.ui.notify(String(error), 'error'); }
@@ -307,7 +308,18 @@ export function createFusion(pi: ExtensionAPI, launch: (options: Launch) => Retu
             if (!resume) { reservation = `${id}/${childID}`; turns.set(reservation, { work, signal: controller.signal }); }
             run.sessionID = childID; resolveStart(childID);
           },
-          onSessionReady: (session, steer) => { runs.attach(run, session); workers.attach(id, run, session, controller, canConfirm, steer); },
+          onSessionReady: (session, steer) => {
+            runs.attach(run, session);
+            workers.attach(id, run, session, controller, () => canConfirm() && !configuring.has(id) && active(ctx), steer, {
+              ready: () => ctx.isIdle() && canConfirm() && !configuring.has(id) && active(ctx),
+              notify: text => {
+                if (!ctx.isIdle() || !canConfirm() || configuring.has(id) || !active(ctx)) return false;
+                checkLead(ctx, setup.lead);
+                if (!canConfirm()) return false;
+                pi.sendMessage({ customType: 'fusion.pi.supervision', content: text, display: true }, { triggerTurn: true, deliverAs: 'followUp' });
+              },
+            });
+          },
           onConfirmed: childID => {
             // Before-navigation hooks drain workers while the original branch is
             // still current. Retain history flushed by abort, but never deliver it.

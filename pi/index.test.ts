@@ -4,7 +4,7 @@ import { mkdtemp } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { createFusion, parseModelsArgs } from './index.ts';
-import type { Launch } from './worker.ts';
+import type { Launch, LiveWorkers } from './worker.ts';
 import { emptyUsage } from './worker.ts';
 import { History } from './state.ts';
 
@@ -554,4 +554,44 @@ test('lead controls a blocked background advisor, rejects foreign/stale callers 
   await handlers.get('session_before_tree')?.();
   await assert.rejects(call({ sessionID: 'worker-controls-2', action: 'message', message: 'stale' }), /confirmed|stale|own/i);
   assert.equal(delivered.length, 1, 'navigation suppresses unrelated late cancellation results');
+});
+
+test('automatic root supervision skips busy/model-drift ticks and navigation invalidates pending delivery', async t => {
+  const dir = await mkdtemp('/tmp/opencode/fusion-pi-supervision-');
+  const tools = new Map<string, any>(), handlers = new Map<string, Function>();
+  const model = { provider: 'p', id: 'a', reasoning: true, input: ['text'], contextWindow: 250000, maxTokens: 1000 };
+  const entries: any[] = [{ type: 'custom', customType: 'fusion.pi.setup', id: 'setup-supervision', data: { lead: 'p/a#high', sidekick: 'p/a#low' } }];
+  let idle = true, effort = 'high', workers!: LiveWorkers, now = Date.now();
+  const delivered: Array<{ message: { customType: string; content: string }; options: unknown }> = [];
+  t.mock.method(Date, 'now', () => now);
+  const pi = { registerCommand: () => {}, registerTool: (tool: any) => tools.set(tool.name, tool), on: (event: string, handler: Function) => handlers.set(event, handler),
+    getThinkingLevel: () => effort,
+    sendMessage: (message: { customType: string; content: string }, options: unknown) => delivered.push({ message, options }) } as unknown as ExtensionAPI;
+  const ctx = { cwd: dir, hasUI: false, isIdle: () => idle, model,
+    modelRegistry: { find: () => model, getAvailable: () => [model], hasConfiguredAuth: () => true },
+    sessionManager: { getSessionId: () => 'root-supervision', getBranch: () => entries }, ui: { notify: () => {} } } as unknown as ExtensionContext;
+  createFusion(pi, async options => {
+    workers = options.workers!;
+    options.onSessionReady?.({ sessionId: 'supervised-child', isIdle: false, subscribe: () => () => {}, sendCustomMessage: async () => {} } as any);
+    options.onStarted?.('supervised-child');
+    return new Promise((_resolve, reject) => options.signal!.addEventListener('abort', () => reject(new Error('navigation cancelled')), { once: true }));
+  }, dir);
+  await tools.get('fusion_delegate').execute('start', { role: 'sidekick', task: 'bounded job', background: true }, undefined, undefined, ctx);
+  t.after(async () => { await handlers.get('session_shutdown')?.(); });
+  idle = false; now += 60000; await workers.checkProgress();
+  now += 60000; await workers.checkProgress();
+  assert.equal(delivered.length, 0);
+  idle = true; now += 60000; await workers.checkProgress();
+  assert.equal(delivered.length, 1, 'busy ticks are skipped, not queued');
+  assert.equal(delivered[0].message.customType, 'fusion.pi.supervision');
+  assert.ok(delivered[0].message.content.includes('supervised-child'));
+  assert.deepEqual(delivered[0].options, { triggerTurn: true, deliverAs: 'followUp' });
+  effort = 'low'; now += 60000; await workers.checkProgress();
+  assert.equal(delivered.length, 1, 'supervision never repairs or bypasses lead model/effort drift');
+  effort = 'high'; now += 60000;
+  const pending = workers.checkProgress();
+  const navigation = handlers.get('session_before_tree')!();
+  await Promise.all([pending, navigation]);
+  now += 60000; await workers.checkProgress();
+  assert.equal(delivered.length, 1, 'navigation invalidates late summaries and background completions');
 });

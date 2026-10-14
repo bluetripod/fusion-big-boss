@@ -115,6 +115,42 @@ for (const role of ['advisor', 'reviewer'] as const) test(`${role} controls bloc
   assert.equal(env.requests.length, count, 'completed controls never restart the worker');
 });
 
+for (const role of ['advisor', 'reviewer'] as const) test(`${role} wakes on automatic evidence supervision in its native owner conversation`, { timeout: 10000 }, async t => {
+  let ownerCalls = 0, evidenceID = '', owner!: AgentSession;
+  const env = await fixture((model, _index, context, _cwd, options) => {
+    if (model.id === 'two') {
+      evidenceID = options!.sessionId!;
+      return { ...reply(model, 'evidence still running'), stopReason: 'pending' };
+    }
+    if (++ownerCalls === 1) return { ...reply(model, ''), stopReason: 'toolUse', content: [
+      { type: 'toolCall', id: 'start-supervised-evidence', name: 'fusion_delegate', arguments: { role: 'sidekick', task: 'collect bounded evidence', background: true } },
+    ] };
+    return reply(model, JSON.stringify(context.messages.filter(message => message.role === 'user')));
+  });
+  let now = Date.now();
+  const workers = new LiveWorkers({ now: () => now });
+  const controller = new AbortController();
+  const operation = runChild({ ...env, root: 'root-supervised-evidence', role, choice: 'fusion-fake/one#low', sidekickChoice: 'fusion-fake/two#medium',
+    task: 'assess', briefing: 'contract', modelRuntime: env.runtime, workers, signal: controller.signal,
+    onSessionReady: session => { owner = session; } });
+  t.after(async () => { controller.abort(); workers.dispose(); await operation.catch(() => {}); });
+  while (ownerCalls < 2) await new Promise(resolve => setImmediate(resolve));
+  await owner.waitForIdle();
+  now += 60000; await workers.checkProgress();
+  await owner.waitForIdle();
+  assert.equal(ownerCalls, 3, 'automatic evidence update wakes the idle owner before evidence completion');
+  const delivered = owner.messages.filter(message => message.role === 'custom' && message.customType === 'fusion.pi.steering');
+  assert.equal(delivered.length, 1);
+  assert.ok(JSON.stringify(delivered[0]).includes(evidenceID));
+  assert.equal(env.requests.filter(request => request.sessionId === evidenceID).length, 1, 'summary does not restart evidence inference');
+  env.release.get(evidenceID)!('bounded evidence complete');
+  const result = await operation;
+  assert.ok(result.text.includes('bounded evidence complete'), 'owner still consumes final evidence after a supervision wake');
+  const calls = env.requests.length;
+  now += 60000; await workers.checkProgress();
+  assert.equal(env.requests.length, calls, 'released evidence cannot wake a terminal owner');
+});
+
 for (const role of ['advisor', 'reviewer'] as const) test(`${role} wakes on root steering while evidence is blocked and drains its cancellation before final delivery`, { timeout: 10000 }, async t => {
   let ownerCalls = 0, evidenceID = '', owner!: AgentSession, settled = false;
   const env = await fixture((model, _index, context, _cwd, options) => {
