@@ -1,6 +1,7 @@
 ---
 name: fusion-delegation
 description: Write precise subagent briefs for file-location lookups, specified coding, commands, or supplied-evidence decision review, including worker follow-ups.
+user-invocable: false
 ---
 
 # Delegation briefs
