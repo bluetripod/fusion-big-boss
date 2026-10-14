@@ -1,5 +1,5 @@
 {
-  "name": "ai4corp-fusion-bigg-boss",
+  "name": "fusion-big-boss",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -12,7 +12,6 @@
     "./tui": "./ai.opencode/tui.ts"
   },
   "files": [
-    "ARCHITECTURE.md",
     "plugin.json",
     "ai.opencode/index.ts",
     "ai.opencode/context.ts",

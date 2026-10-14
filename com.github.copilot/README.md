@@ -7,27 +7,29 @@ Fusion supplies four agent profiles in [`agents/`](agents/) and a role-aware run
 Copilot CLI 1.0.89-5 rejects `copilot plugin install .`. Its supported local route is a **local marketplace** whose single plugin source points to this repository. Replace `/absolute/path/to/fusion` with the stable clone path; stop if any destination already exists rather than overwriting it:
 
 ```sh
-mkdir -p "$HOME/.local/state/ai4corp-fusion"
-mkdir -m 700 "$HOME/.local/state/ai4corp-fusion/copilot-marketplace-local"
-ln -s /absolute/path/to/fusion "$HOME/.local/state/ai4corp-fusion/copilot-marketplace-local/plugin"
-(set -C; cat > "$HOME/.local/state/ai4corp-fusion/copilot-marketplace-local/marketplace.json") <<'JSON'
+mkdir -p "$HOME/.local/state/fusion-big-boss"
+mkdir -m 700 "$HOME/.local/state/fusion-big-boss/copilot-marketplace-local"
+ln -s /absolute/path/to/fusion "$HOME/.local/state/fusion-big-boss/copilot-marketplace-local/plugin"
+(set -C; cat > "$HOME/.local/state/fusion-big-boss/copilot-marketplace-local/marketplace.json") <<'JSON'
 {
-  "name": "ai4corp-fusion-local",
+  "name": "fusion-big-boss-local",
   "owner": { "name": "Local Fusion" },
   "plugins": [
-    { "name": "ai4corp-fusion-bigg-boss", "source": "./plugin" }
+    { "name": "fusion-big-boss", "source": "./plugin" }
   ]
 }
 JSON
-copilot plugin marketplace add "$HOME/.local/state/ai4corp-fusion/copilot-marketplace-local"
-copilot plugin marketplace browse ai4corp-fusion-local
-copilot plugin install ai4corp-fusion-bigg-boss@ai4corp-fusion-local
+copilot plugin marketplace add "$HOME/.local/state/fusion-big-boss/copilot-marketplace-local"
+copilot plugin marketplace browse fusion-big-boss-local
+copilot plugin install fusion-big-boss@fusion-big-boss-local
 copilot plugin list
 ```
 
+When upgrading from a differently named package, install `fusion-big-boss` and reapply your chosen models through `/fusion`; packaged role IDs now use the `fusion-big-boss:` prefix. Saved choices are read from the `fusion-big-boss/copilot-fusion.json` state path described below. To retain earlier recents, copy your previous history file there only if the destination does not already exist. The rename does not migrate installed settings or histories automatically.
+
 This CLI reports local-marketplace plugins as **live**, not cached copies: source edits take effect in the next Copilot session. Preserve both the clone and marketplace paths. For migration, privately back up and retire only older loose `~/.copilot/agents/fusion*.agent.md` and `~/.copilot/extensions/fusion-guard/` once the installed package is verified; do not replace unrelated assets or settings.
 
-In a new Copilot session, enable extensions with `/settings experimental on` if needed, then start another session. When prompted for `plugin:ai4corp-fusion-bigg-boss:fusion-guard` to **register hooks**, approve that capability for the location if you want persistent protection there; a different location may ask again. Do not use a blanket permission grant. Experimental mode alone does not approve hooks. Without the running guard, written agent instructions are not enforceable tool restrictions.
+In a new Copilot session, enable extensions with `/settings experimental on` if needed, then start another session. When prompted for `plugin:fusion-big-boss:fusion-guard` to **register hooks**, approve that capability for the location if you want persistent protection there; a different location may ask again. Do not use a blanket permission grant. Experimental mode alone does not approve hooks. Without the running guard, written agent instructions are not enforceable tool restrictions.
 
 Use `/fusion` to configure the packaged lead and workers. Approve any additional command/tool-registration capability prompt explicitly; hook approval is still required for runtime protection. Old loose-profile selections need not transfer to the namespaced agents. The guard prevents direct lead/advisor/reviewer shell/search, restricts their text views to finite ranges of at most 350 lines, and permits lead-owned coding sidekick Git, native web search and known-URL fetch. Search guards recognize exact `web_search`, `github-mcp-server-web_search`, and `github-mcp-server/web_search` names present in the inspected 1.0.95 runtime; tool availability, arguments and approval remain native. Evidence sidekicks cannot use web tools. Only the lead can start consultations/reviews; each advisor/reviewer may start or control its own evidence-only sidekick, never borrow the coding worker. Sidekicks cannot delegate or control workers. Model configuration and ownership checks still apply, as do ordinary Copilot permissions.
 
@@ -76,11 +78,11 @@ Apply selects this plugin's packaged Fusion lead, sets its model/effort, and wri
 
 Apply refuses while any Fusion worker task is running or its status cannot be verified. Off is allowed with background work: it selects the default agent and preserves the current lead model/effort, conversation, workers, native settings, and saved setup. Existing coding sidekicks retain their no-delegation boundary; advisors/reviewers and evidence workers retain read-only boundaries. Off blocks new advisor/reviewer evidence jobs, while owned status/cancellation remain available. Re-enabling requires explicit Apply; reopening the picker or asking for status does not enable Fusion.
 
-The last applied setup and per-role recent three are saved atomically in `$XDG_STATE_HOME/ai4corp-fusion/copilot-fusion.json`, or `~/.local/state/ai4corp-fusion/copilot-fusion.json`, with file mode `0600`. Only explicitly selected roles enter recents after successful Apply. Old saved lead/sidekick/advisor model, effort, and context selections remain valid when reviewer fields/recents are absent; reviewer remains disabled until selected. Obsolete utility fields are ignored, never substituted into sidekick. Utility is no longer a recognized role or setup argument. Existing utility chats and native settings entries are left untouched and unused by Fusion. Missing/corrupt required-role history is treated as empty.
+The last applied setup and per-role recent three are saved atomically in `$XDG_STATE_HOME/fusion-big-boss/copilot-fusion.json`, or `~/.local/state/fusion-big-boss/copilot-fusion.json`, with file mode `0600`. Only explicitly selected roles enter recents after successful Apply. Old saved lead/sidekick/advisor model, effort, and context selections remain valid when reviewer fields/recents are absent; reviewer remains disabled until selected. Obsolete utility fields are ignored, never substituted into sidekick. Utility is no longer a recognized role or setup argument. Existing utility chats and native settings entries are left untouched and unused by Fusion. Missing/corrupt required-role history is treated as empty.
 
 ## Optional user-requested review
 
-After selecting a reviewer, ask the lead normally: **“Do a code review with the Fusion reviewer.”** The lead uses it only for explicitly requested code review, never automatically after coding or fixing findings. It prepares the neutral, frozen packet defined in [User-requested code review](../skills/fusion-delegation/SKILL.md#user-requested-code-review), then invokes a fresh background `task` with `ai4corp-fusion-bigg-boss:fusion-reviewer`, or continues a confirmed retained same-change reviewer with `write_agent`. The lead chooses the conversation; you need not type task IDs. Unrelated work starts fresh. Missing-evidence follow-ups stay within the requested review; a separate review or re-review needs another ordinary user request. The lead retains planning, interpretation, fixes, and the final answer.
+After selecting a reviewer, ask the lead normally: **“Do a code review with the Fusion reviewer.”** The lead uses it only for explicitly requested code review, never automatically after coding or fixing findings. It prepares the neutral, frozen packet defined in [User-requested code review](../skills/fusion-delegation/SKILL.md#user-requested-code-review), then invokes a fresh background `task` with `fusion-big-boss:fusion-reviewer`, or continues a confirmed retained same-change reviewer with `write_agent`. The lead chooses the conversation; you need not type task IDs. Unrelated work starts fresh. Missing-evidence follow-ups stay within the requested review; a separate review or re-review needs another ordinary user request. The lead retains planning, interpretation, fixes, and the final answer.
 
 User intent is an instruction policy, not a runtime detector or authorization token. Under an active Fusion lead, the guard validates configuration for new/continued work, same-root start/parent evidence for retained reviewers, and supported worker status. Reviewer writes require one explicit `agent_id` with no model/effort/context overrides; task-registry IDs are not runtime child-session IDs. When Fusion is off, ordinary root task/message behavior remains native except messages targeting retained Fusion workers (including group messages that would reach them). Existing Fusion descendants retain their role boundaries regardless of the selected root agent.
 

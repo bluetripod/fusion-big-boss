@@ -104,7 +104,7 @@ with host-specific implementations and consistent user-facing meanings.
 - Pi implementation/tests: `pi/index.ts`, `pi/worker.ts`, viewer integration,
   and `pi/*.test.ts`; retain existing session ownership and cleanup patterns.
 - Shared role guidance: `skills/fusion-delegation/SKILL.md` and generated Copilot
-  sections. Update adapter READMEs and `ARCHITECTURE.md` with actual guarantees.
+  sections. Update adapter guides and the main `README.md` with actual guarantees.
 - Keep scheduling and host APIs in their adapters; avoid a new generic worker
   framework or dependencies.
 

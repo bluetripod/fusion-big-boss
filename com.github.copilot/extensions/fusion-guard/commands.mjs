@@ -117,7 +117,7 @@ export function createCommands(getSession, history = new History()) {
       }
     }
     const { agents } = await session.rpc.agent.list();
-    const candidates = Array.isArray(agents) ? agents.filter(agent => agent?.id === 'ai4corp-fusion-bigg-boss:fusion') : [];
+    const candidates = Array.isArray(agents) ? agents.filter(agent => agent?.id === 'fusion-big-boss:fusion') : [];
     if (candidates.length !== 1 || candidates[0].source !== 'plugin' || fusionAgentIdentity(candidates[0]) !== 'fusion') {
       throw new Error(`Cannot identify the packaged Fusion lead agent; no other agent was selected. Agent discovery: ${agentDiagnostics(agents)}. Report the CLI version and this identity-only diagnostic.`);
     }

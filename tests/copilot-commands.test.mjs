@@ -10,7 +10,7 @@ import { History } from '../com.github.copilot/extensions/fusion-guard/state.mjs
 import { createHooks } from '../com.github.copilot/extensions/fusion-guard/hooks.mjs';
 import { createRoleResolver } from '../com.github.copilot/extensions/fusion-guard/roles.mjs';
 
-const prefix = 'ai4corp-fusion-bigg-boss:';
+const prefix = 'fusion-big-boss:';
 const lead = { id: `${prefix}fusion`, name: `${prefix}fusion`, source: 'plugin',
   displayName: 'Fusion', description: 'Packaged Fusion lead',
   path: fileURLToPath(new URL('../com.github.copilot/agents/fusion.agent.md', import.meta.url)) };
@@ -103,7 +103,7 @@ test('installed CopilotSession supports picker, Apply, direct reviewer start/res
   // plugin and an isolated config directory. Project through the host DTO helper.
   const discovered = JSON.parse(await native.customAgentsDiscoverJson(JSON.stringify({ integrationId: 'cli',
     configDir: join(dirname(history.path), 'empty-config'), projectPaths: [], hasResolvedPlugins: true,
-    additionalPlugins: [{ name: 'ai4corp-fusion-bigg-boss', marketplace: 'local', installed_at: '', enabled: true,
+    additionalPlugins: [{ name: 'fusion-big-boss', marketplace: 'local', installed_at: '', enabled: true,
       cache_path: installedPlugin }] })));
   state.agents = discovered.agents.map(agent => JSON.parse(native.agentsProjectInfoJson(JSON.stringify(agent))));
   assert.ok(state.agents.some(agent => agent.id === `${prefix}fusion-reviewer`), 'native discovery must expose the packaged reviewer');

@@ -30,13 +30,13 @@ test('extension entrypoint actually joins and installs an enforcing pre-tool hoo
         connection: { sendRequest: async method => {
           assert.equal(method, 'user.settings.get');
           return { settings: { subagents: { value: { agents: {
-            'ai4corp-fusion-bigg-boss:fusion-reviewer': { model: 'reviewer', effortLevel: 'high', modelPolicy: 'required' },
+            'fusion-big-boss:fusion-reviewer': { model: 'reviewer', effortLevel: 'high', modelPolicy: 'required' },
           } } } } };
         } }, rpc: {
         model: { list: async () => ({ list: [{ id: 'reviewer', supportedReasoningEfforts: ['high'] }] }) },
         eventLog: { read: async () => ({ events: [], cursor: 'end', hasMore: false, cursorStatus: 'ok' }) },
         agent: { getCurrent: async () => ({ agent: {
-          id: 'ai4corp-fusion-bigg-boss:fusion', name: 'ai4corp-fusion-bigg-boss:fusion',
+          id: 'fusion-big-boss:fusion', name: 'fusion-big-boss:fusion',
           source: 'plugin', path: process.argv[2],
         } }) },
       } };
@@ -52,7 +52,7 @@ test('extension entrypoint actually joins and installs an enforcing pre-tool hoo
     await commands.find(command => command.name === 'fusion').handler({ sessionId: 'root', args: 'status' });
     assert.match(notices.at(-1), /Fusion on/);
     const review = () => hooks.onPreToolUse(
-      { sessionId: 'root', toolName: 'task', toolArgs: { agent_type: 'ai4corp-fusion-bigg-boss:fusion-reviewer', mode: 'background' } },
+      { sessionId: 'root', toolName: 'task', toolArgs: { agent_type: 'fusion-big-boss:fusion-reviewer', mode: 'background' } },
       { sessionId: 'root' });
     assert.equal(await review(), undefined, 'entrypoint must support direct configured reviewer delegation');
   `;

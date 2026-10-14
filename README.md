@@ -1,31 +1,73 @@
-# Fusion Bigg Boss
+# Fusion Big Boss
 
-Fusion puts a user-selected **lead** in charge of source analysis, planning, coding, review, and the final answer. Its persistent **sidekicks** execute only fully specified coding changes, location-only file lookups, and exact command/retrieval jobs—not ambiguous exploration or analysis. The lead and optional read-only **advisor** may each run multiple sidekicks in parallel for independent tasks. Advisor workers remain evidence-only; the optional **reviewer** has its own evidence sidekick. Review runs only when you request it. You choose every role's model and thinking effort; Fusion does not choose a replacement.
+**Your models. Clear roles. Controlled delegation.**
 
-## How work moves
+Fusion coordinates a lead and specialist workers across **OpenCode, Copilot CLI and Pi**. You choose each role's model and thinking effort; Fusion never selects a replacement.
 
-1. You choose the models and authorize the task.
-2. The lead reads and interprets focused source itself, up to **350 lines per call**. A precise lookup returns only paths, line ranges and matched symbols for the lead to read.
-3. The lead may code directly, including multi-file changes. It delegates only when the inputs, actions, scope, checks and stop conditions are already clear and a handoff is worthwhile. Command/check failures or ambiguity return to the caller, not autonomous worker debugging. Start separate sidekicks for independent tasks; reuse each confirmed worker ID for related follow-ups, with one active task per session. Coordinate conflicting writes and stable-tree checks.
-4. If configured, the advisor assesses a precise question. Advisor/reviewer reads also allow 350 lines per call; their separate evidence sidekicks can locate files, inspect Git read-only and run specified tests/checks, but cannot edit source or fix findings. The lead retains decisions and the final answer.
-5. Ask normally, for example **“Do a code review with the Fusion reviewer.”** The lead prepares a source-backed review packet and invokes the optional reviewer. It chooses a retained conversation for the same change or starts fresh for unrelated work; you do not need to type a command or session ID.
+[OpenCode setup](ai.opencode/README.md) · [Copilot CLI setup](com.github.copilot/README.md) · [Pi setup](pi/README.md)
 
-While workers run, the lead can inspect progress, send messages, and cancel them. “Wrap up quickly and summarize what you have” is an ordinary message; the lead decides when to cancel separately. Advisors can run in background and manage their own background evidence workers. Controls preserve available output and conversation history; stopping work does not undo edits, and queued steering or requested cancellation is not proof the worker has acted on it. See each adapter guide for its native tools and limits.
+## Who does what?
 
-Choose the reviewer in `/fusion`; it is not required for setup or ordinary work. Prefer a different model family from the lead/author (for example GPT versus Claude), as a suggestion only. Fusion neither detects nor enforces model families. Install review skills independently through your host's normal mechanism: `code-review-and-quality` is the suggested default, with security/performance guidance only when relevant. Fusion does not install or vendor them. Missing skills are disclosed; a limited inline review remains possible.
+| Role | Responsibility | Tool boundaries |
+| :--- | :--- | :--- |
+| **Lead** | Understand the source, plan, make decisions, implement, integrate and answer you. | Bounded reads, edits and worker controls. Delegates shell, search and retrieval. |
+| **Coding sidekick** | Execute a fully specified change, file lookup or command; return results and blockers. | File tools, shell/Git/tests and host-supported retrieval. Cannot spawn workers. |
+| **Advisor** · optional | Challenge a specific decision and explain tradeoffs. | Read-only; delegates checks to its own evidence sidekicks. No direct shell, web or edits. |
+| **Reviewer** · optional | Review a frozen change snapshot **when you explicitly ask**. Report findings; the lead owns fixes. | Bounded reads, installed review guidance and its own evidence sidekick. No direct shell, web or edits. |
+| **Evidence sidekick** | Locate files, inspect Git read-only or run specified checks for an advisor/reviewer. Uses your sidekick model. | Read/search/shell tools only. No named edit tools or further delegation; instructions forbid source changes. |
 
-The lead is instructed to call the reviewer **only when you explicitly ask for code review**, never automatically after implementation or fixes. This is an instruction rule, not a runtime permission gate or a guarantee of model obedience. A separate re-review needs another request; missing-evidence follow-ups remain within the review you asked for.
+```mermaid
+flowchart LR
+    U[You: choose models and task] --> L[Lead: understand, decide, deliver]
+    L --> S[Coding sidekicks: execute scoped work]
+    L -. Consult .-> A[Advisor: assess tradeoffs]
+    L -. Requested review .-> R[Reviewer: inspect frozen change]
+    A --> AE[Advisor-owned evidence workers]
+    R --> RE[Reviewer-owned evidence worker]
+```
 
-The review packet identifies the exact baseline and frozen snapshot, includes the full in-scope diff and relevant callers/contracts/tests, explains requirements and unchanged behavior, and distinguishes reported checks from untested assumptions. Untracked or ignored source must be accounted for explicitly. Summaries and filenames alone are not review evidence. The reviewer has focused read/skill access and may delegate precise evidence jobs only to its own sidekick; no direct shell, editing, broad search or web. The lead still owns fixes and the final answer.
+The lead reads and interprets source itself. Lookup workers return locations; coding workers receive exact scope and checks. Reuse a worker for related tasks, with one active task per conversation; independent workers can run in parallel.
 
-Reviewer installation, setup, and host-specific limits: [OpenCode](ai.opencode/README.md), [Copilot CLI](com.github.copilot/README.md), [Pi](pi/README.md).
+## How restrictions work
 
-The native tools differ: OpenCode uses `subagent`, Pi uses `fusion_delegate`, and Copilot uses `task` plus `read_agent`/`write_agent`. Copilot's native write operation combines steering and continuation; an idle write can start another turn. Pi's built-in SDK provides file and shell tools, with no native web-search/fetch tools.
+**Runtime enforcement** checks tool calls before execution:
 
-**OpenCode and Pi:** `/fusion` also selects a **context budget per role**, alongside model and effort. Choose Default or a supported smaller window (including 100k), or edit only an existing role's context budget. Choices persist and use the host's native compaction. These are local compaction targets—not different API models, provider pricing tiers, or guaranteed billing ceilings. See each adapter guide for compaction and failure limits. Copilot's existing native context-tier picker is unchanged.
+| Guard | What it checks |
+| :--- | :--- |
+| **Read bounds** | Lead/advisor/reviewer reads require explicit ranges of at most **350 lines**. |
+| **Role tools** | Blocks restricted shell/search/web calls; read-only workers cannot use named editing tools. |
+| **Ownership** | Callers can resume, inspect, message or cancel only their own workers. Evidence workers cannot be borrowed as coding workers. |
+| **Model selection** | Delegation validates user-selected configuration and rejects unauthorized model overrides. |
 
-`skills/fusion-delegation/SKILL.md` is the shared delegation-briefing source; `shared/briefing.mjs` delivers it. OpenCode is the behavioral reference: Pi and Copilot use their native SDKs to match its role boundaries, reusable workers and lifecycle controls. Host permissions, agent formats and storage remain separate; adapter guides document SDK limits on matching scheduling, tools and continuation behavior. Precise-task and location-only rules are instruction policies, not runtime ambiguity classifiers. Read limits, role ownership and named-tool boundaries are guarded, but shell scripts can bypass those boundaries: evidence-only commands must preserve source even though the guard is not an operating-system sandbox. Automated checks cannot prove model obedience, source understanding or live source reload. Model, authentication and permissions remain with you.
+| Host | Enforcement | Delegation & live controls |
+| :--- | :--- | :--- |
+| **OpenCode** | [Agent permissions](ai.opencode/agents/) + [plugin hooks](ai.opencode/index.ts) | `subagent` · `fusion_worker` |
+| **Copilot CLI** | [Pre-tool hooks, role checks and policies](com.github.copilot/extensions/fusion-guard/) | `task` · `read_agent` · `write_agent` · `fusion_cancel` |
+| **Pi** | [Lead tool-call guard](pi/index.ts) + [restricted SDK worker tools](pi/worker.ts) | `fusion_delegate` · `fusion_worker` |
 
-When upgrading from the retired utility-role setup, obsolete utility model choices are ignored while lead/sidekick/advisor choices are retained. Existing three-role setups remain valid with reviewer unconfigured. Finish active workers before loading the new source and inspect any separately installed utility profile before removing only that Fusion-owned definition. No conversation or installed configuration is deleted automatically.
+> **Instructions are a separate layer.** “Delegate only precise tasks,” “review only when asked,” and “preserve source during evidence checks” come from the [shared briefing](skills/fusion-delegation/SKILL.md). Hooks cannot judge task clarity or model understanding. Shell commands can still modify files: these guards are **not an OS sandbox**.
 
-Copilot's extension-owned `/fusion` picker stages model/effort choices until you explicitly Apply. It also supports text setup, `/fusion status`, and `/fusion off`; worker choices are merged into native `/subagents` settings as well as applied to the current session. For installation, configuration, and checks, see the [Copilot guide](com.github.copilot/README.md).
+## Use it
+
+1. Follow your host's setup guide above.
+2. Run **`/fusion`** and explicitly apply your model choices. Advisor and reviewer are optional.
+3. Give the lead a task. For review, ask: **“Do a code review with the Fusion reviewer.”**
+
+While work runs, callers can **inspect progress, send messages and request cancellation**. “Wrap up with findings and unfinished checks” is an ordinary message. Cancellation preserves history and edits; it is cooperative, not rollback.
+
+### Host differences
+
+- **Context:** OpenCode/Pi offer per-role local context budgets. Copilot currently uses native `default` / `long_context` tiers. Budgets are not spending caps.
+- **Continuation:** OpenCode/Pi queue same-worker follow-ups. Copilot's `write_agent` steers a running worker or continues an idle one; terminal tasks cannot resume.
+- **Tools & lifecycle:** Pi has no native web-search/fetch tools, disables child extensions, and aborts/drains workers on navigation. Adapter guides cover installation, skills and other host limits.
+
+## Development
+
+`ai.opencode/`, `com.github.copilot/` and `pi/` contain the host adapters; `shared/` and `skills/` hold common helpers and delegation guidance.
+
+```bash
+npm ci
+npm run check
+```
+
+Checks cover adapter behavior, typechecking, shared-briefing drift and offline packaging. OpenCode tests also require Bun. After editing the shared briefing, run `npm run sync:briefing` to refresh generated profiles.

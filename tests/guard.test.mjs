@@ -12,8 +12,8 @@ import { createCancelTool } from '../com.github.copilot/extensions/fusion-guard/
 
 const leadPath = fileURLToPath(new URL('../com.github.copilot/agents/fusion.agent.md', import.meta.url));
 const foreignPath = fileURLToPath(new URL('./foreign-fusion.agent.md', import.meta.url));
-const packagedLead = { id: 'ai4corp-fusion-bigg-boss:fusion',
-  name: 'ai4corp-fusion-bigg-boss:fusion', source: 'plugin', path: leadPath };
+const packagedLead = { id: 'fusion-big-boss:fusion',
+  name: 'fusion-big-boss:fusion', source: 'plugin', path: leadPath };
 const looseLead = { id: 'fusion', name: 'fusion', source: 'user' };
 const event = (type, agentId, data) => ({
   type, ...(agentId ? { agentId } : {}), data,
@@ -27,12 +27,12 @@ const spawn = (id, role, parentAgentId = null, parentTaskId) => [
 ];
 
 function fixture(agent = packagedLead) {
-  const agents = Object.fromEntries(['fusion-sidekick', 'ai4corp-fusion-bigg-boss:fusion-sidekick']
+  const agents = Object.fromEntries(['fusion-sidekick', 'fusion-big-boss:fusion-sidekick']
     .map(role => [role, { model: 'user-choice', effortLevel: 'high', modelPolicy: 'required' }]));
-  const state = { agent, subagents: { agents, disabledSubagents: ['ai4corp-fusion-bigg-boss:fusion-advisor'] }, journal: [],
+  const state = { agent, subagents: { agents, disabledSubagents: ['fusion-big-boss:fusion-advisor'] }, journal: [],
     cursorStatus: 'ok', settingsFailure: false, agentFailure: false, reads: [], logs: [],
     tasks: [{ type: 'agent', id: 'task-sidekick',
-      agentType: 'ai4corp-fusion-bigg-boss:fusion-sidekick', toolCallId: 'call-sidekick', status: 'idle' }] };
+      agentType: 'fusion-big-boss:fusion-sidekick', toolCallId: 'call-sidekick', status: 'idle' }] };
   const listeners = new Map();
   const session = {
     sessionId: 'root',
@@ -102,10 +102,10 @@ async function installed(f) {
   };
 }
 
-function reviewReady(f, name = 'ai4corp-fusion-bigg-boss:fusion-reviewer') {
+function reviewReady(f, name = 'fusion-big-boss:fusion-reviewer') {
   f.state.subagents.agents[name] = { model: 'selected-reviewer', effortLevel: 'high', modelPolicy: 'required' };
 }
-function advisorReady(f, name = 'ai4corp-fusion-bigg-boss:fusion-advisor') {
+function advisorReady(f, name = 'fusion-big-boss:fusion-advisor') {
   f.state.subagents.agents[name] = { model: 'user-choice', effortLevel: 'high', modelPolicy: 'required' };
   f.state.subagents.disabledSubagents = f.state.subagents.disabledSubagents.filter(key => key !== name);
 }
@@ -316,7 +316,7 @@ test('installed 1.0.95 SDK dispatches registered cancellation with child attribu
 
 test('verified coding sidekick runs Git and native web retrieval but cannot delegate', async () => {
   const f = fixture();
-  f.state.append(spawn('sidekick', 'ai4corp-fusion-bigg-boss:fusion-sidekick'));
+  f.state.append(spawn('sidekick', 'fusion-big-boss:fusion-sidekick'));
   const h = await installed(f);
   for (const command of ['git -C . status', 'function g(){ git status; }; g']) {
     assert.equal(await h.tool('sidekick', 'bash', { command }), undefined);
@@ -338,7 +338,7 @@ test('verified coding sidekick runs Git and native web retrieval but cannot dele
 test('direct reviewer task without a command validates configuration and fresh background bounds', async () => {
   const f = fixture(); reviewReady(f);
   const h = await installed(f);
-  const args = { agent_type: 'ai4corp-fusion-bigg-boss:fusion-reviewer', mode: 'background' };
+  const args = { agent_type: 'fusion-big-boss:fusion-reviewer', mode: 'background' };
   const launch = extra => h.tool('root', 'task', { ...args, ...extra });
   assert.equal(await launch(), undefined);
   for (const key of ['model', 'reasoning_effort', 'context_tier']) {
@@ -351,7 +351,7 @@ test('direct reviewer task without a command validates configuration and fresh b
 test('reviewer delegation validates exact enabled model settings and fails closed on unavailable metadata', async () => {
   for (const failure of ['missing', 'disabled', 'foreign-key', 'preferred', 'effort', 'context', 'unavailable-model', 'metadata', 'catalog', 'identity']) {
     const f = fixture(); reviewReady(f);
-    const key = 'ai4corp-fusion-bigg-boss:fusion-reviewer';
+    const key = 'fusion-big-boss:fusion-reviewer';
     const entry = f.state.subagents.agents[key];
     const catalog = f.session.rpc.model.list;
     const h = await installed(f);
@@ -377,7 +377,7 @@ test('reviewer delegation validates exact enabled model settings and fails close
 
 test('owned reviewer accepts steering and continuation with one target, supported status and no overrides', async () => {
   const f = fixture(); reviewReady(f);
-  const task = { type: 'agent', id: 'review-task', agentType: 'ai4corp-fusion-bigg-boss:fusion-reviewer', toolCallId: 'call-reviewer', status: 'idle' };
+  const task = { type: 'agent', id: 'review-task', agentType: 'fusion-big-boss:fusion-reviewer', toolCallId: 'call-reviewer', status: 'idle' };
   f.state.tasks.push(task);
   f.state.append(spawn('reviewer', task.agentType));
   const other = { ...task, id: 'other-review-task', toolCallId: 'call-other-reviewer' };
@@ -407,7 +407,7 @@ test('non-Fusion roots and descendants retain ordinary native delegation, group 
   f.state.append(spawn('ordinary-worker', 'build'));
   f.state.tasks.push(
     { type: 'agent', id: 'review-loose', agentType: 'fusion-reviewer', status: 'idle' },
-    { type: 'agent', id: 'review-packaged', agentType: 'ai4corp-fusion-bigg-boss:fusion-reviewer', status: 'idle' },
+    { type: 'agent', id: 'review-packaged', agentType: 'fusion-big-boss:fusion-reviewer', status: 'idle' },
     { type: 'agent', id: 'other-task', agentType: 'build', status: 'idle' });
   const h = await installed(f);
   for (const agent of [null, { id: 'build', name: 'build', source: 'user' }]) {
@@ -455,7 +455,7 @@ test('default native group writes pass through without a task catalog; unknown r
 test('reviewer follow-ups reject unknown, foreign, duplicate or unowned targets and unavailable evidence', async () => {
   for (const failure of ['unknown', 'foreign', 'duplicate', 'status', 'ancestry', 'journal', 'task-outage']) {
     const f = fixture(); reviewReady(f);
-    const task = { type: 'agent', id: 'review-task', agentType: 'ai4corp-fusion-bigg-boss:fusion-reviewer', toolCallId: 'call-reviewer', status: 'idle' };
+    const task = { type: 'agent', id: 'review-task', agentType: 'fusion-big-boss:fusion-reviewer', toolCallId: 'call-reviewer', status: 'idle' };
     f.state.tasks.push(task); f.state.append(spawn('reviewer', task.agentType));
     if (failure === 'foreign') task.agentType = 'foreign:fusion-reviewer';
     if (failure === 'duplicate') f.state.tasks.push({ ...task });
@@ -470,7 +470,7 @@ test('reviewer follow-ups reject unknown, foreign, duplicate or unowned targets 
 
 test('verified reviewer tools enforce read-only inspection and native skills, including ordinary tools descendants previously bypassed', async () => {
   const f = fixture();
-  f.state.append(spawn('reviewer', 'ai4corp-fusion-bigg-boss:fusion-reviewer'));
+  f.state.append(spawn('reviewer', 'fusion-big-boss:fusion-reviewer'));
   f.state.append(spawn('sidekick', 'fusion-sidekick'));
   const h = await installed(f);
   assert.equal(await h.tool('reviewer', 'view', { path: leadPath, view_range: [1, 350] }), undefined);
@@ -519,7 +519,7 @@ test('a missed reviewer start with unavailable replay cannot bypass view bounds'
   assert.equal(await tool('edit', { path: leadPath }), undefined);
   f.state.agent = packagedLead;
   f.session.rpc.eventLog.read = replay;
-  f.state.append([...spawn('reviewer', 'ai4corp-fusion-bigg-boss:fusion-reviewer'), ...spawn('sidekick', 'fusion-sidekick')]);
+  f.state.append([...spawn('reviewer', 'fusion-big-boss:fusion-reviewer'), ...spawn('sidekick', 'fusion-sidekick')]);
   assert.equal(await tool('view', { path: leadPath, view_range: [1, 10] }), undefined);
   assert.equal(await tool('skill', { skill: 'code-review-and-quality' }), undefined);
   denies(await tool('view', { path: leadPath, view_range: [1, 100000] }), /finite/);
@@ -532,8 +532,8 @@ test('a missed reviewer start with unavailable replay cannot bypass view bounds'
 for (const caller of ['reviewer', 'advisor']) test(`${caller} delegates only to its own evidence sidekicks with no source-editing tools`, async () => {
   const f = fixture(); reviewReady(f);
   if (caller === 'advisor') advisorReady(f);
-  f.state.append([...spawn('sidekick', 'fusion-sidekick'), ...spawn(caller, `ai4corp-fusion-bigg-boss:fusion-${caller}`)]);
-  f.state.tasks.push({ type: 'agent', id: 'review-task', agentType: `ai4corp-fusion-bigg-boss:fusion-${caller}`, toolCallId: `call-${caller}`, status: 'running' });
+  f.state.append([...spawn('sidekick', 'fusion-sidekick'), ...spawn(caller, `fusion-big-boss:fusion-${caller}`)]);
+  f.state.tasks.push({ type: 'agent', id: 'review-task', agentType: `fusion-big-boss:fusion-${caller}`, toolCallId: `call-${caller}`, status: 'running' });
   const h = await installed(f);
   assert.equal(await h.tool(caller, 'task', { agent_type: 'fusion-sidekick', mode: 'background', prompt: 'Find parseModel in ai.opencode/index.ts; locations only' }), undefined);
   f.state.append(spawn('evidence', 'fusion-sidekick', caller, 'review-task'), true);
@@ -573,7 +573,7 @@ test('direct reviewer delegation uses only the current attachment after same-roo
     if (!sameRoot) next.session.sessionId = 'next-root';
     session = next.session; roles.subscribe(session);
     const launch = (root = session.sessionId) => hooks.onPreToolUse({ sessionId: root, toolName: 'task', toolArgs: {
-      agent_type: 'ai4corp-fusion-bigg-boss:fusion-reviewer', mode: 'background',
+      agent_type: 'fusion-big-boss:fusion-reviewer', mode: 'background',
     } }, { sessionId: root });
     if (!sameRoot) denies(await launch('root'), /no longer attached/);
     assert.equal(await launch(), undefined);
@@ -599,7 +599,7 @@ for (const caller of ['root', 'reviewer', 'advisor']) test(`${caller} delegation
     return settings(...args);
   };
   const launch = () => hooks.onPreToolUse({ sessionId: caller, toolName: 'task', toolArgs: {
-    agent_type: caller === 'root' ? 'ai4corp-fusion-bigg-boss:fusion-reviewer' : 'fusion-sidekick', mode: 'background',
+    agent_type: caller === 'root' ? 'fusion-big-boss:fusion-reviewer' : 'fusion-sidekick', mode: 'background',
   } }, { sessionId: 'root' });
   const stale = launch();
   await checking;
@@ -641,7 +641,7 @@ test('old in-flight root identity replies cannot change current attachment tool 
     if (prompt) assert.equal(await stale, undefined);
     else denies(await stale, /Cannot verify/);
     assert.equal(await hooks.onPreToolUse({ sessionId: 'root', toolName: 'task', toolArgs: {
-      agent_type: 'ai4corp-fusion-bigg-boss:fusion-reviewer', mode: 'background',
+      agent_type: 'fusion-big-boss:fusion-reviewer', mode: 'background',
     } }, { sessionId: 'root' }), undefined);
   }
 });
@@ -649,7 +649,7 @@ test('old in-flight root identity replies cannot change current attachment tool 
 test('Agent Plugins 1.0 manifest and Copilot directory layout expose the remaining profiles', async () => {
   const manifest = JSON.parse(await readFile(new URL('../plugin.json', import.meta.url), 'utf8'));
   assert.equal(manifest.$schema, 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json');
-  assert.equal(manifest.name, 'ai4corp-fusion-bigg-boss');
+  assert.equal(manifest.name, 'fusion-big-boss');
   assert.equal(manifest.version, '0.1.0');
   assert.equal(Object.hasOwn(manifest, 'agents'), false);
   assert.equal(Object.hasOwn(manifest, 'extensions'), false);
@@ -683,7 +683,7 @@ test('packaged identity requires plugin source, exact profile path, and name; lo
 
 test('packaged lead activates guard, role-aware child routing, and advisor prompt status', async () => {
   const f = fixture();
-  f.state.append(spawn('sidekick', 'ai4corp-fusion-bigg-boss:fusion-sidekick'));
+  f.state.append(spawn('sidekick', 'fusion-big-boss:fusion-sidekick'));
   const h = await installed(f);
   denies(await h.tool('root', 'bash', { command: 'npm test' }), /Fusion lead cannot run/);
   denies(await h.tool('root', 'grep', { pattern: 'text' }), /Fusion lead cannot search/);
@@ -692,7 +692,7 @@ test('packaged lead activates guard, role-aware child routing, and advisor promp
   assert.equal(await h.tool('sidekick', 'bash', { command: 'npm test' }), undefined);
   assert.equal(await h.tool('sidekick', 'web_search', { query: 'anything' }), undefined);
   denies(await h.tool('root', 'task', { agent_type: 'fusion-sidekick', mode: 'background', model: 'override' }), /must omit model/);
-  denies(await h.tool('root', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-advisor', mode: 'background' }), /disabled in \/subagents/);
+  denies(await h.tool('root', 'task', { agent_type: 'fusion-big-boss:fusion-advisor', mode: 'background' }), /disabled in \/subagents/);
   const notice = await h.prompt('root');
   assert.deepEqual(Object.keys(notice), ['additionalContext']);
   assert.match(notice.additionalContext, /advisor: disabled/);
@@ -766,7 +766,7 @@ test('lead can launch independent sidekicks with fresh background calls', async 
 test('lead can launch sidekicks alongside verified workers in any known status', async () => {
   for (const status of ['running', 'idle', 'completed', 'failed', 'cancelled']) {
     const f = fixture(); f.state.tasks[0].status = status;
-    f.state.append(spawn('sidekick', 'ai4corp-fusion-bigg-boss:fusion-sidekick'));
+    f.state.append(spawn('sidekick', 'fusion-big-boss:fusion-sidekick'));
     const h = await installed(f);
     const decision = await h.tool('root', 'task', { agent_type: 'fusion-sidekick', mode: 'background' });
     assert.equal(decision, undefined, status);
@@ -777,8 +777,8 @@ for (const caller of ['root', 'advisor']) test(`${caller} admits independent sid
   const f = fixture(); f.state.append(spawn('sidekick', 'fusion-sidekick'));
   if (caller === 'advisor') {
     advisorReady(f);
-    f.state.append(spawn('advisor', 'ai4corp-fusion-bigg-boss:fusion-advisor'));
-    f.state.tasks.push({ type: 'agent', id: 'advisor-task', agentType: 'ai4corp-fusion-bigg-boss:fusion-advisor', toolCallId: 'call-advisor', status: 'running' });
+    f.state.append(spawn('advisor', 'fusion-big-boss:fusion-advisor'));
+    f.state.tasks.push({ type: 'agent', id: 'advisor-task', agentType: 'fusion-big-boss:fusion-advisor', toolCallId: 'call-advisor', status: 'running' });
   }
   const h = await installed(f);
   const launch = () => h.tool(caller, 'task', { agent_type: 'fusion-sidekick', mode: 'background' });
@@ -807,8 +807,8 @@ for (const caller of ['root', 'advisor']) test(`${caller} admits independent sid
 
 test('reviewer sidekick launch is reserved until start evidence or tool outcome', async () => {
   const f = fixture(); reviewReady(f);
-  f.state.tasks = [{ type: 'agent', id: 'review-task', agentType: 'ai4corp-fusion-bigg-boss:fusion-reviewer', toolCallId: 'call-reviewer', status: 'running' }];
-  f.state.append(spawn('reviewer', 'ai4corp-fusion-bigg-boss:fusion-reviewer'));
+  f.state.tasks = [{ type: 'agent', id: 'review-task', agentType: 'fusion-big-boss:fusion-reviewer', toolCallId: 'call-reviewer', status: 'running' }];
+  f.state.append(spawn('reviewer', 'fusion-big-boss:fusion-reviewer'));
   const h = await installed(f);
   const launch = () => h.tool('reviewer', 'task', { agent_type: 'fusion-sidekick', mode: 'background' });
   const decisions = await Promise.all([launch(), launch()]);
@@ -830,7 +830,7 @@ test('fresh sidekick fails closed on unavailable status or unverified ownership 
   const f = fixture(); const h = await installed(f);
   const launch = () => h.tool('root', 'task', { agent_type: 'fusion-sidekick', mode: 'background' });
   denies(await launch(), /Cannot verify|Cannot confirm/);
-  f.state.append(spawn('sidekick', 'ai4corp-fusion-bigg-boss:fusion-sidekick'));
+  f.state.append(spawn('sidekick', 'fusion-big-boss:fusion-sidekick'));
   delete f.state.tasks[0].status;
   denies(await launch(), /status.*retry|status.*Retry/);
   f.state.tasks = [];
@@ -881,15 +881,15 @@ test('workers without explicit effort require a confirmed no-effort model', asyn
 
 test('worker settings use the exact requested namespaced key', async () => {
   const f = fixture(); f.state.tasks = [];
-  delete f.state.subagents.agents['ai4corp-fusion-bigg-boss:fusion-sidekick'];
+  delete f.state.subagents.agents['fusion-big-boss:fusion-sidekick'];
   const h = await installed(f);
-  denies(await h.tool('root', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-sidekick', mode: 'background' }), /Cannot confirm/);
+  denies(await h.tool('root', 'task', { agent_type: 'fusion-big-boss:fusion-sidekick', mode: 'background' }), /Cannot confirm/);
   assert.equal(await h.tool('root', 'task', { agent_type: 'fusion-sidekick', mode: 'background' }), undefined);
 });
 
 test('independent sidekick launch requires unique same-root task and start correlation', async () => {
   const f = fixture();
-  f.state.append(spawn('sidekick', 'ai4corp-fusion-bigg-boss:fusion-sidekick'));
+  f.state.append(spawn('sidekick', 'fusion-big-boss:fusion-sidekick'));
   const h = await installed(f);
   const launch = () => h.tool('root', 'task', { agent_type: 'fusion-sidekick', mode: 'background' });
   assert.equal(await launch(), undefined);
@@ -917,7 +917,7 @@ test('running workers admit steering and remain readable without waiting for com
   for (const name of ['fusion-sidekick', 'fusion-advisor']) {
     const f = fixture();
     f.state.subagents.agents['fusion-advisor'] = { model: 'user-choice', effortLevel: 'high', modelPolicy: 'required' };
-    f.state.append(spawn('sidekick', 'ai4corp-fusion-bigg-boss:fusion-sidekick'));
+    f.state.append(spawn('sidekick', 'fusion-big-boss:fusion-sidekick'));
     const task = { type: 'agent', id: 'target', agentType: name, toolCallId: 'call-target', status: 'running' };
     f.state.tasks.push(task);
     f.state.append(spawn('target', name));
@@ -939,7 +939,7 @@ test('running workers admit steering and remain readable without waiting for com
 });
 
 test('steering rejects sidekick callers and multi-target messages', async () => {
-  const f = fixture(); f.state.append(spawn('sidekick', 'ai4corp-fusion-bigg-boss:fusion-sidekick'));
+  const f = fixture(); f.state.append(spawn('sidekick', 'fusion-big-boss:fusion-sidekick'));
   f.state.tasks.push({ type: 'agent', id: 'advisor', agentType: 'fusion-advisor', toolCallId: 'call-advisor', status: 'running' });
   f.state.append(spawn('advisor', 'fusion-advisor'));
   const h = await installed(f);
@@ -953,19 +953,19 @@ test('steering rejects sidekick callers and multi-target messages', async () => 
 test('foreign and obsolete role names cannot inherit verified sidekick permissions', async () => {
   const f = fixture();
   f.state.tasks = [{ type: 'agent', id: 'task-sidekick',
-    agentType: 'ai4corp-fusion-bigg-boss:fusion-sidekick', toolCallId: 'call-sidekick', status: 'idle' },
+    agentType: 'fusion-big-boss:fusion-sidekick', toolCallId: 'call-sidekick', status: 'idle' },
   { type: 'agent', id: 'task-foreign', agentType: 'foreign:fusion-sidekick', toolCallId: 'call-foreign' }];
-  f.state.append([...spawn('sidekick', 'ai4corp-fusion-bigg-boss:fusion-sidekick'),
-    ...spawn('nested-utility', 'ai4corp-fusion-bigg-boss:fusion-utility', 'sidekick', 'task-sidekick'),
+  f.state.append([...spawn('sidekick', 'fusion-big-boss:fusion-sidekick'),
+    ...spawn('nested-utility', 'fusion-big-boss:fusion-utility', 'sidekick', 'task-sidekick'),
     ...spawn('foreign', 'foreign:fusion-sidekick')]);
   const h = await installed(f);
-  assert.equal(await h.tool('root', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-sidekick', mode: 'background' }), undefined);
-  denies(await h.tool('root', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-utility', mode: 'background' }), /fresh/);
+  assert.equal(await h.tool('root', 'task', { agent_type: 'fusion-big-boss:fusion-sidekick', mode: 'background' }), undefined);
+  denies(await h.tool('root', 'task', { agent_type: 'fusion-big-boss:fusion-utility', mode: 'background' }), /fresh/);
   denies(await h.tool('nested-utility', 'web_fetch', { url: 'https://example.invalid' }), /Cannot verify/);
   denies(await h.tool('nested-utility', 'bash', { command: 'git status' }), /Cannot verify/);
   assert.equal(await h.tool('root', 'write_agent', { agent_id: 'task-sidekick' }), undefined);
   denies(await h.tool('root', 'task', { agent_type: 'foreign:fusion-sidekick', mode: 'background' }), /fresh/);
-  denies(await h.tool('foreign', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-sidekick', mode: 'background' }), /Cannot verify/);
+  denies(await h.tool('foreign', 'task', { agent_type: 'fusion-big-boss:fusion-sidekick', mode: 'background' }), /Cannot verify/);
   denies(await h.tool('root', 'write_agent', { agent_id: 'task-foreign' }), /Cannot confirm/);
 });
 
@@ -973,21 +973,21 @@ test('advisor settings and follow-ups use the exact requested or targeted role k
   const f = fixture();
   const ready = { model: 'user-choice', effortLevel: 'high', modelPolicy: 'required' };
   f.state.tasks.push(
-    { type: 'agent', id: 'advisor-qualified', agentType: 'ai4corp-fusion-bigg-boss:fusion-advisor', toolCallId: 'call-advisor-qualified', status: 'idle' },
+    { type: 'agent', id: 'advisor-qualified', agentType: 'fusion-big-boss:fusion-advisor', toolCallId: 'call-advisor-qualified', status: 'idle' },
     { type: 'agent', id: 'advisor-loose', agentType: 'fusion-advisor', toolCallId: 'call-advisor-loose', status: 'idle' });
-  f.state.append([...spawn('advisor-qualified', 'ai4corp-fusion-bigg-boss:fusion-advisor'), ...spawn('advisor-loose', 'fusion-advisor')]);
-  f.state.subagents = { disabledSubagents: ['ai4corp-fusion-bigg-boss:fusion-advisor'], agents: {
-    'ai4corp-fusion-bigg-boss:fusion-advisor': ready, 'fusion-advisor': ready,
+  f.state.append([...spawn('advisor-qualified', 'fusion-big-boss:fusion-advisor'), ...spawn('advisor-loose', 'fusion-advisor')]);
+  f.state.subagents = { disabledSubagents: ['fusion-big-boss:fusion-advisor'], agents: {
+    'fusion-big-boss:fusion-advisor': ready, 'fusion-advisor': ready,
   } };
   const h = await installed(f);
   assert.match((await h.prompt('root')).additionalContext, /advisor: disabled/);
-  denies(await h.tool('root', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-advisor', mode: 'background' }), /disabled/);
+  denies(await h.tool('root', 'task', { agent_type: 'fusion-big-boss:fusion-advisor', mode: 'background' }), /disabled/);
   denies(await h.tool('root', 'write_agent', { agent_id: 'advisor-qualified' }), /disabled/);
   assert.equal(await h.tool('root', 'task', { agent_type: 'fusion-advisor', mode: 'background' }), undefined);
   assert.equal(await h.tool('root', 'write_agent', { agent_id: 'advisor-loose' }), undefined);
   f.state.subagents.disabledSubagents = ['fusion-advisor'];
   assert.match((await h.prompt('root')).additionalContext, /configured and not disabled/);
-  assert.equal(await h.tool('root', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-advisor', mode: 'background' }), undefined);
+  assert.equal(await h.tool('root', 'task', { agent_type: 'fusion-big-boss:fusion-advisor', mode: 'background' }), undefined);
   assert.equal(await h.tool('root', 'write_agent', { agent_id: 'advisor-qualified' }), undefined);
   denies(await h.tool('root', 'task', { agent_type: 'fusion-advisor', mode: 'background' }), /disabled/);
   denies(await h.tool('root', 'write_agent', { agent_id: 'advisor-loose' }), /disabled/);
@@ -995,11 +995,11 @@ test('advisor settings and follow-ups use the exact requested or targeted role k
   denies(await h.tool('root', 'task', { agent_type: 'foreign:fusion-advisor', mode: 'background' }), /fresh/);
   f.state.subagents = { agents: { 'fusion-advisor': ready } };
   assert.match((await h.prompt('root')).additionalContext, /not configured/);
-  denies(await h.tool('root', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-advisor', mode: 'background' }), /Cannot confirm/);
+  denies(await h.tool('root', 'task', { agent_type: 'fusion-big-boss:fusion-advisor', mode: 'background' }), /Cannot confirm/);
   assert.equal(await h.tool('root', 'task', { agent_type: 'fusion-advisor', mode: 'background' }), undefined);
   const loose = fixture(looseLead);
   loose.state.subagents = { disabledSubagents: ['fusion-advisor'], agents: {
-    'ai4corp-fusion-bigg-boss:fusion-advisor': ready,
+    'fusion-big-boss:fusion-advisor': ready,
   } };
   assert.match((await (await installed(loose)).prompt('root')).additionalContext, /advisor: disabled/);
   const compatible = fixture({ ...packagedLead, name: 'fusion' });
@@ -1035,7 +1035,7 @@ test('foreground advisor has verified read-only identity and can launch only own
 
 test('disabled or unavailable coding workers remain readable and cancellable but reject continuation', async () => {
   const f = fixture(); cancellable(f);
-  f.state.append(spawn('sidekick', 'ai4corp-fusion-bigg-boss:fusion-sidekick'));
+  f.state.append(spawn('sidekick', 'fusion-big-boss:fusion-sidekick'));
   const h = await installed(f);
   const name = f.state.tasks[0].agentType;
   f.state.subagents.disabledSubagents.push(name);
@@ -1052,7 +1052,7 @@ test('disabled or unavailable coding workers remain readable and cancellable but
 
 for (const caller of ['advisor', 'reviewer']) test(`${caller} revalidates its own exact configuration for new and continued evidence, preserving status/cancel`, async () => {
   const f = fixture(); cancellable(f); advisorReady(f); reviewReady(f);
-  const name = `ai4corp-fusion-bigg-boss:fusion-${caller}`;
+  const name = `fusion-big-boss:fusion-${caller}`;
   f.state.tasks = [
     { type: 'agent', id: 'parent-task', agentType: name, toolCallId: `call-${caller}`, status: 'running' },
     { type: 'agent', id: 'evidence-task', agentType: 'fusion-sidekick', toolCallId: 'call-evidence', status: 'idle' },
@@ -1229,30 +1229,30 @@ test('advisor cannot fetch, run Git directly, invoke other roles or borrow the l
 test('advisor status and authorization refresh after a user-setting toggle without choosing a model', async () => {
   const f = fixture(); const h = await installed(f);
   assert.match((await h.prompt('root')).additionalContext, /disabled/);
-  f.state.subagents = { agents: { 'ai4corp-fusion-bigg-boss:fusion-advisor': {
+  f.state.subagents = { agents: { 'fusion-big-boss:fusion-advisor': {
     model: 'user-choice', effortLevel: 'high', modelPolicy: 'required',
   } } };
   assert.match((await h.prompt('root')).additionalContext, /configured and not disabled/);
-  assert.equal(await h.tool('root', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-advisor', mode: 'background' }), undefined);
+  assert.equal(await h.tool('root', 'task', { agent_type: 'fusion-big-boss:fusion-advisor', mode: 'background' }), undefined);
   f.state.settingsFailure = true;
   assert.match((await h.prompt('root')).additionalContext, /status unavailable/);
-  denies(await h.tool('root', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-advisor', mode: 'background' }), /Cannot verify/);
+  denies(await h.tool('root', 'task', { agent_type: 'fusion-big-boss:fusion-advisor', mode: 'background' }), /Cannot verify/);
   denies(await h.tool('root', 'task', { agent_type: 'fusion-sidekick', mode: 'background' }), /Cannot verify/);
 });
 
 test('advisor omitted effort stays unconfigured for models with effort choices', async () => {
   const f = fixture();
-  f.state.subagents = { agents: { 'ai4corp-fusion-bigg-boss:fusion-advisor': { model: 'selected', modelPolicy: 'required' } } };
+  f.state.subagents = { agents: { 'fusion-big-boss:fusion-advisor': { model: 'selected', modelPolicy: 'required' } } };
   let hasEffortSelector = true;
   f.session.rpc.model = { list: async () => ({ list: [{ id: 'selected',
     ...(hasEffortSelector ? { supportedReasoningEfforts: ['high'] } : {}),
   }] }) };
   const h = await installed(f);
   assert.match((await h.prompt('root')).additionalContext, /not configured/);
-  denies(await h.tool('root', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-advisor', mode: 'background' }), /explicit supported advisor effort/);
+  denies(await h.tool('root', 'task', { agent_type: 'fusion-big-boss:fusion-advisor', mode: 'background' }), /explicit supported advisor effort/);
   hasEffortSelector = false;
   assert.match((await h.prompt('root')).additionalContext, /configured and not disabled/);
-  assert.equal(await h.tool('root', 'task', { agent_type: 'ai4corp-fusion-bigg-boss:fusion-advisor', mode: 'background' }), undefined);
+  assert.equal(await h.tool('root', 'task', { agent_type: 'fusion-big-boss:fusion-advisor', mode: 'background' }), undefined);
 });
 
 test('foreign same-named plugin and unrelated agents never inherit Fusion restrictions', async () => {

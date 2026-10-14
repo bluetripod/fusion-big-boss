@@ -10,7 +10,7 @@ const choice = (value) => value && typeof value.model === 'string' && value.mode
   && (value.contextTier === undefined || ['default', 'long_context'].includes(value.contextTier));
 
 export class History {
-  constructor(path = join(process.env.XDG_STATE_HOME || join(homedir(), '.local/state'), 'ai4corp-fusion/copilot-fusion.json')) {
+  constructor(path = join(process.env.XDG_STATE_HOME || join(homedir(), '.local/state'), 'fusion-big-boss/copilot-fusion.json')) {
     this.path = path;
   }
 

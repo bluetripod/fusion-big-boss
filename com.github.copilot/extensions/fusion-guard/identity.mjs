@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 // plugin profile to this extension's own installed tree avoids accepting a
 // same-named agent supplied by a different plugin.
 const packagedLeadPath = fileURLToPath(new URL('../../agents/fusion.agent.md', import.meta.url));
-const namespace = 'ai4corp-fusion-bigg-boss:';
+const namespace = 'fusion-big-boss:';
 const fusionRoles = new Set(['fusion', 'fusion-sidekick', 'fusion-advisor', 'fusion-reviewer']);
 
 function isPackagedLeadPath(path) {
