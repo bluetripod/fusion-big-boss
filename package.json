@@ -1,0 +1,65 @@
+{
+  "name": "ai4corp-fusion-bigg-boss",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": "./ai.opencode/index.ts",
+    "./rpc": "./ai.opencode/rpc.ts",
+    "./tui": "./ai.opencode/tui.ts"
+  },
+  "files": [
+    "ARCHITECTURE.md",
+    "plugin.json",
+    "ai.opencode/index.ts",
+    "ai.opencode/context.ts",
+    "ai.opencode/usage.ts",
+    "ai.opencode/rpc.ts",
+    "ai.opencode/tui.ts",
+    "ai.opencode/agents/*.md",
+    "com.github.copilot/agents/*.agent.md",
+    "com.github.copilot/extensions/fusion-guard/*.mjs",
+    "pi/index.ts",
+    "pi/state.ts",
+    "pi/worker.ts",
+    "pi/viewer.ts",
+    "pi/viewer-ui.ts",
+    "pi/usage.ts",
+    "shared/*.mjs",
+    "skills/fusion-delegation/SKILL.md"
+  ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "test:opencode": "bun test ai.opencode/index.test.ts ai.opencode/tui.test.ts ai.opencode/usage.test.ts",
+    "typecheck:opencode": "tsc --project ai.opencode/tsconfig.json",
+    "test:pi": "node --test pi/*.test.ts",
+    "typecheck:pi": "tsc --project pi/tsconfig.json",
+    "sync:briefing": "node scripts/generate-briefing.mjs",
+    "check": "npm test && npm run test:opencode && npm run typecheck:opencode && npm run test:pi && npm run typecheck:pi"
+  },
+  "pi": {
+    "extensions": ["./pi/index.ts"],
+    "skills": ["./skills/fusion-delegation"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-ai": { "optional": true },
+    "@earendil-works/pi-coding-agent": { "optional": true }
+  },
+  "dependencies": {
+    "@opencode/plugin": "2.0.15",
+    "solid-js": "1.9.15"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
+    "@types/node": "26.6.2",
+    "typescript": "5.9.3"
+  }
+}

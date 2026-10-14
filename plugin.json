@@ -1,0 +1,6 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "ai4corp-fusion-bigg-boss",
+  "version": "0.1.0",
+  "description": "Copilot CLI Fusion lead, sidekick, utility, and optional advisor with a role-aware guard."
+}
