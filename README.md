@@ -6,6 +6,8 @@ Fusion coordinates a lead and specialist workers across **OpenCode, Copilot CLI 
 
 [OpenCode setup](ai.opencode/README.md) · [Copilot CLI setup](com.github.copilot/README.md) · [Pi setup](pi/README.md)
 
+[Releases and change notes](https://github.com/bluetripod/fusion-big-boss/releases) · Each release tag identifies an exact source snapshot.
+
 ## Who does what?
 
 | Role | Responsibility | Tool boundaries |
@@ -29,26 +31,60 @@ flowchart LR
     R --> RE[Sidekick: reviewer-owned checks]
 ```
 
-The lead reads and interprets source itself. For lookups, sidekicks return locations; for implementation, they receive exact scope and checks. Reuse a worker for related tasks, with one active task per conversation; independent workers can run in parallel.
+## Lead vs sidekick: tool access
 
-## How restrictions work
+**Both can edit code.** The lead understands the source, makes decisions and coordinates work. Its sidekick has the shell, search and execution tools needed to carry out specified assignments. This division applies across all three hosts; native tool names and enforcement mechanisms differ.
 
-**Runtime enforcement** checks tool calls before execution:
+- **Runtime:** code blocks a tool call, checks its arguments, or removes the tool. Implemented through hooks, host permissions or fixed tool lists (see below).
+- **Prompt:** instructions tell the model how to behave. A hook cannot establish that the model understood the source or stayed within the intent of an assignment.
 
-| Guard | What it checks |
-| :--- | :--- |
-| **Read bounds** | Lead/advisor/reviewer reads require explicit ranges of at most **350 lines**. |
-| **Role tools** | Blocks restricted shell/search/web calls; read-only workers cannot use named editing tools. |
-| **Ownership** | Callers can resume, inspect, message or cancel only their own sidekicks. The lead cannot borrow an advisor/reviewer's sidekick for coding. |
-| **Model selection** | Delegation validates user-selected configuration and rejects unauthorized model overrides. |
+| Capability | Lead | Lead's sidekick | Where the restriction comes from |
+| :--- | :--- | :--- | :--- |
+| Read source files | Yes—explicit ranges of at most **350 lines per call** | Yes—no Fusion-specific 350-line cap | **Runtime:** lead read-argument checks. Focused source reading is **prompt** guidance. |
+| Create/edit files | Yes, including multi-file changes | Yes, within its assignment | Tools are available to both. Staying within the authorized change is **prompt** guidance; normal host permissions still apply. |
+| Search files/content | **Blocked**—delegates lookups | Allowed: host tools such as `grep`, `glob` or `find` | **Runtime:** lead search tools blocked. Returning only paths/ranges for lookup jobs is **prompt** guidance. |
+| Run shell commands | **Blocked** | Allowed | **Runtime:** lead shell tools blocked or unavailable. Exact command scope and approvals are **prompt** rules. |
+| Run tests, builds and Git commands | Delegates to the sidekick | Allowed within scope and approvals | **Runtime:** shell restriction. Routing all ordinary Git/check work through the sidekick is also a **prompt** rule. |
+| Search the web / fetch URLs | Delegates retrieval | Native web tools in OpenCode/Copilot when available; Pi can run a specified URL-fetch command through its shell | **Runtime:** lead native web tools blocked; Pi has no native web tools. Retrieval scope and approvals are **prompt** rules. |
+| Start other agents | Can start sidekick, advisor and reviewer workers | **Blocked** | **Runtime:** delegation graph enforced. Calling the reviewer only when the user asks is a **prompt** rule. |
+| Inspect, message or cancel workers | Yes, for workers it owns | **Blocked** | **Runtime:** ownership checks; sidekicks cannot use worker-control tools. |
+| Choose worker models | Uses your configured choices | Cannot choose replacements | **Runtime:** configuration checks and per-call overrides rejected. Never choosing a fallback is also a **prompt** rule. |
 
-| Host | Enforcement | Delegation & live controls |
+An **advisor/reviewer's sidekick** has a narrower tool set: file reads/lookups and shell checks, with named editing tools blocked at runtime. Preserving source, avoiding commits/pushes and keeping shell commands evidence-only are **prompt** rules. It belongs to that advisor/reviewer; the lead cannot borrow it for coding.
+
+### How each host enforces this
+
+| Host | Runtime mechanism | Boundary |
 | :--- | :--- | :--- |
-| **OpenCode** | [Agent permissions](ai.opencode/agents/) + [plugin hooks](ai.opencode/index.ts) | `subagent` · `fusion_worker` |
-| **Copilot CLI** | [Pre-tool hooks, role checks and policies](com.github.copilot/extensions/fusion-guard/) | `task` · `read_agent` · `write_agent` · `fusion_cancel` |
-| **Pi** | [Lead tool-call guard](pi/index.ts) + [restricted SDK worker tools](pi/worker.ts) | `fusion_delegate` · `fusion_worker` |
+| **OpenCode** | [Agent permissions](ai.opencode/agents/) + [pre-execution hooks and tool filtering](ai.opencode/index.ts) | Lead restrictions target native tool names; evidence roles have narrower tool lists. |
+| **Copilot CLI** | [Pre-tool hooks, role checks and policies](com.github.copilot/extensions/fusion-guard/) | Lead restrictions target recognized tool names; evidence roles use allowlists. The guard must be loaded and approved. |
+| **Pi** | [Lead tool-call hook](pi/index.ts) + [fixed SDK worker tool lists](pi/worker.ts) | Lead calls use an allowlist; child extensions are disabled to preserve worker tool boundaries. |
 
-> **Instructions are a separate layer.** “Delegate only precise tasks,” “review only when asked,” and “preserve source during evidence checks” come from the [shared briefing](skills/fusion-delegation/SKILL.md). Hooks cannot judge task clarity or model understanding. Shell commands can still modify files: these guards are **not an OS sandbox**.
+OpenCode/Copilot lead guards are **not universal allowlists for arbitrary MCP or third-party tools**. All runtime restrictions depend on the adapter being active and loaded. Shell access can still modify files: these guards are **not an OS sandbox**.
+
+## How delegation works
+
+For example, when you ask the lead to fix a bug:
+
+1. **Locate:** if the file location is unknown, the lead gives a sidekick specific search roots and symbols/patterns. The sidekick returns paths and line ranges.
+2. **Understand:** the lead reads those ranges itself, diagnoses the problem and decides what should change.
+3. **Implement:** the lead edits directly or sends a precise coding assignment: working directory, target files/symbols, desired behavior, constraints, approvals, checks and stop conditions. File count alone does not require delegation.
+4. **Verify:** the sidekick runs specified tests/build/Git commands and reports results. Ambiguity or failures return to the lead for diagnosis rather than triggering an independent repair loop.
+5. **Finish:** the lead reviews the changes and evidence, integrates the result and answers you.
+
+This workflow is **prompt-guided**, through the [shared briefing](skills/fusion-delegation/SKILL.md) and role instructions. Runtime guards enforce tool access, worker ownership and model configuration—not the quality or completeness of the assignment.
+
+### The actual handoff
+
+The lead sends the assignment in a tool call that starts a background sidekick conversation and returns its ID. The sidekick returns results to its caller. Related follow-ups reuse that conversation where the host supports it; independent, non-conflicting jobs can use separate workers in parallel. One active assignment per worker is the workflow rule.
+
+| Host | Start / continue an assignment | Inspect / steer / cancel |
+| :--- | :--- | :--- |
+| **OpenCode** | `subagent` with `background: true`; reuse its `sessionID` for follow-ups | `fusion_worker`: `status`, `message`, `cancel` |
+| **Copilot CLI** | `task` with `mode: background`; `write_agent` continues an idle worker | `read_agent`, `write_agent`, `fusion_cancel` |
+| **Pi** | `fusion_delegate` with `background: true`; reuse its `sessionID` for follow-ups | `fusion_worker`: `status`, `message`, `cancel` |
+
+The assignment must carry the context the worker needs; a role name alone is not a handoff. Copilot cannot resume terminal workers, so a new task needs an explicit context/evidence handoff. Worker IDs and ownership are runtime-checked; choosing useful context and coordinating conflicting edits are prompt responsibilities.
 
 ## Use it
 
