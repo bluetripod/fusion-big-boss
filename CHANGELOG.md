@@ -1,13 +1,5 @@
 # Changelog
 
-## Unreleased
-
-### Fixed
-
-- Register OpenCode's bundled Fusion agents when the plugin loads, so new roles
-  are available after package updates without installing separate agent links.
-- Use native Git package install/update instructions for OpenCode and Pi.
-
 ## 0.2.0 — 2026-10-16
 
 ### Added
@@ -18,6 +10,9 @@
 
 ### Fixed
 
+- Register OpenCode's bundled Fusion agents when the plugin loads, so new roles
+  are available after package updates without installing separate agent links.
+- Use native Git package install/update instructions for OpenCode and Pi.
 - Restore the selected context limit before inference with Pi 1.3.0's earlier
   busy-session state, while retaining running-turn and model-choice guards.
 - Recognize tiered model pricing in usage reports without recalculating stored
@@ -27,6 +22,3 @@
 
 - Update the plugin SDK, UI runtime and Pi development SDKs to remove the reported
   serializer, telemetry, HTTP-cache and brace-expansion dependency advisories.
-
-Release tags identify fixed commits. Existing tags keep their original source
-and dependency files; fixes in this release do not rewrite older releases.
