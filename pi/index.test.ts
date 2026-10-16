@@ -450,13 +450,12 @@ test('interactive picker uses recent, new model, optional off, unavailable rejec
   assert.equal(model.contextWindow, 1000000, 'the M-unit recent remains selectable and keeps its budget');
 });
 
-test('real Pi loader registers commands and owned tool without inference or real auth', async () => {
+test('real Pi package loader registers commands and owned tool without inference or real auth', async () => {
   const dir = await mkdtemp('/tmp/opencode/fusion-pi-sdk-');
-  const settingsManager = SettingsManager.inMemory();
+  const settingsManager = SettingsManager.inMemory({ packages: [resolve('.')] });
   const modelRuntime = await ModelRuntime.create({ authPath: join(dir, 'auth.json'), modelsPath: join(dir, 'models.json') });
-  const resourceLoader = new DefaultResourceLoader({ cwd: dir, agentDir: dir, settingsManager, noExtensions: true,
-    noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true,
-    additionalExtensionPaths: [resolve('pi/index.ts')] });
+  const resourceLoader = new DefaultResourceLoader({ cwd: dir, agentDir: dir, settingsManager,
+    noSkills: true, noPromptTemplates: true, noThemes: true, noContextFiles: true });
   await resourceLoader.reload();
   assert.deepEqual(resourceLoader.getExtensions().errors, []);
   const { session } = await createAgentSession({ cwd: dir, agentDir: dir, settingsManager, modelRuntime, resourceLoader, sessionManager: SessionManager.inMemory(dir), tools: ['fusion_delegate'] });

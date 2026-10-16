@@ -70,13 +70,17 @@ if (!source || !isAbsolute(source) || !['active', 'missing'].includes(expected))
       await pause(1000);
     }
     const commands = (await get('/api/command')).data.filter((item) => item.name === 'fusion-models');
+    const agents = (await get('/api/agent')).data;
+    const roles = ['fusion', 'fusion-sidekick', 'fusion-advisor', 'fusion-reviewer'];
+    const registered = roles.filter(id => agents.some(agent => agent.id === id));
     const ok = expected === 'active'
       ? plugins.length === 1 && plugins[0].state?.status === 'active'
         && resolve(plugins[0].source?.path ?? '') === join(source, 'index.ts') && commands.length === 1
+        && registered.length === roles.length
       : plugins.length === 0 && commands.length === 0;
     console.log(JSON.stringify({ source, expected, plugin: plugins.map(({ id, state, source: origin }) =>
       ({ id, state: state?.status, path: origin?.path })), fusionModelsCommands: commands.length,
-      isolated: root, verified: ok }, null, 2));
+      registeredAgents: registered, isolated: root, verified: ok }, null, 2));
     if (!ok) process.exitCode = 1;
   } catch (error) {
     console.error(error instanceof Error ? error.message : 'private loader verification failed');

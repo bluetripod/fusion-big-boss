@@ -1,4 +1,5 @@
 import { describe, expect, spyOn, test } from "bun:test"
+import { Agent } from "@opencode/plugin"
 import { readFileSync } from "node:fs"
 import { resolve as resolvePath } from "node:path"
 import fusion, { parseModel, parseModelsCommand } from "./index"
@@ -28,6 +29,18 @@ function harness() {
   ]
   for (const model of models) Object.assign(model, { modelID: model.id, limit: { context: 400000, output: 32000 } })
   const modelTransforms: any[] = []
+  const agentTransforms: any[] = []
+  const agents = () => {
+    const entries = new Map(["build", "plan"].map(id => [id, Agent.Info.default(Agent.ID.make(id))]))
+    for (const transform of agentTransforms) transform({
+      update: (id: string, fn: any) => {
+        const agent = entries.get(id) ?? Agent.Info.default(Agent.ID.make(id))
+        fn(agent)
+        entries.set(id, agent)
+      },
+    })
+    return [...entries.values()]
+  }
   const catalog = () => {
     const entries = new Map(models.map(model => [model.providerID + '/' + model.id, structuredClone(model)]))
     const editor = { list: () => [...entries.values()], get: (p: string, id: string) => entries.get(p + '/' + id),
@@ -63,12 +76,7 @@ function harness() {
         if (next) { yield next.value; next.done() }
       }
     } },
-    agent: { list: async () => ({ data: [
-      { id: "fusion", mode: "primary", hidden: false },
-      { id: "build", mode: "primary", hidden: false },
-      { id: "plan", mode: "primary", hidden: false },
-      { id: "fusion-sidekick", mode: "subagent", hidden: false },
-    ] }) },
+    agent: { list: async () => ({ data: agents() }), transform: async (fn: any) => { agentTransforms.push(fn) } },
     storage: {
       get: async (key: string) => store.get(key),
       set: async (key: string, value: unknown) => { store.set(key, value) },
@@ -113,6 +121,20 @@ function harness() {
   return { ctx, tools, commands, hooks, toolHooks, store, switched, waited, prompts, models, sessions, configure, inspect, patch, validate, disable, review,
     transcripts, running, inbox, deliveries, emit }
 }
+
+test("plugin setup makes bundled roles selectable without separately installed agents", async () => {
+  const h = harness()
+  const cleanup = await fusion.setup(h.ctx as any)
+  try {
+    const agents = (await h.ctx.agent.list()).data
+    expect(agents.find(agent => agent.id === "fusion")?.mode).toBe("primary")
+    for (const id of ["fusion-sidekick", "fusion-advisor", "fusion-reviewer"]) {
+      expect(agents.find(agent => agent.id === id)?.mode).toBe("subagent")
+    }
+    await h.configure("fresh", "openai/gpt-6-sol#high", "openai/gpt-5.6-luna")
+    expect(h.sessions.fresh.agent).toBe("fusion")
+  } finally { await cleanup?.() }
+})
 
 function pause() {
   let entered!: () => void, release!: () => void

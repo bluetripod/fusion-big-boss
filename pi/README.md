@@ -2,17 +2,20 @@
 
 [← Roles, tools and restrictions](../README.md)
 
-## 1. Load Fusion
+## 1. Install
 
-You need **Pi 1.3.0**, **Node ≥22.19.0**, configured model access, and a local clone of this repository. Pi supplies the extension's SDK dependencies. Installing this repository's development dependencies does not update your global Pi installation.
+You need **Pi 1.3.0**, **Node ≥22.19.0**, and configured model access. Update your global Pi installation independently if needed to meet the supported version. Pi supplies the extension's SDK dependencies.
 
-From the **project you want to work on**, run:
+Install Fusion with Pi's native package manager and confirm it is listed:
 
 ```sh
-pi --no-extensions --extension /absolute/path/to/fusion-big-boss/pi/index.ts
+pi install git:github.com/bluetripod/fusion-big-boss
+pi list
 ```
 
-Replace the path with your clone's location. This loads only Fusion; omit `--no-extensions` if you also want your usual extensions.
+Then run ordinary `pi` from the **project you want to work on**. The installed package loads automatically; no manual clone, `npm ci`, or extension flags are needed.
+
+When migrating from a manual copy, remove only Fusion's old explicit `-e`/`--extension` arguments or extension-path settings so it is not loaded alongside the installed package. Preserve unrelated extensions and settings.
 
 ## 2. Choose models
 
@@ -40,6 +43,6 @@ For code review, configure Reviewer, then ask **“Do a code review with the Fus
 - **Context:** choose Default or a supported smaller window, up to 1M. Keep native automatic compaction enabled. Budgets are local targets, not token or spending guarantees.
 - **Navigation:** switching sessions/branches aborts and drains workers. Saved history and edits remain. Finish or stop workers before changing setup or turning Fusion off.
 - **Tools:** Pi has no native web-search/fetch tools. Child extensions are disabled; installed skills remain readable. Other extensions in the lead session can affect routing.
-- **Updates:** reload only when idle, or start a fresh Pi process.
+- **Updates:** run `pi update git:github.com/bluetripod/fusion-big-boss`, then start a fresh Pi process after active workers finish, or reload when idle.
 
 **Checks:** from the repository root, run `npm run test:pi` and `npm run typecheck:pi`. See [development](../README.md#development) for dependencies and the full suite. Tests use a deterministic fake provider.

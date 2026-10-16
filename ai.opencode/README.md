@@ -4,37 +4,16 @@
 
 ## 1. Install
 
-You need **OpenCode V2**, configured model access, **Node/npm**, and a local clone of this repository.
-
-From the **repository root**, install dependencies:
+You need **OpenCode V2 (2.0.31 or newer)**, **Git**, and configured model access.
 
 ```sh
-npm ci
+opencode plugin add github:bluetripod/fusion-big-boss
+opencode plugin list
 ```
 
-Add the adapter's absolute path to the existing `plugins` array in `~/.config/opencode/opencode.jsonc`. Preserve your other settings and plugins:
+OpenCode manages the package and its dependencies. Fusion registers its four bundled agents automatically; no manual clone, configuration edits, or agent links are needed.
 
-```jsonc
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugins": ["/absolute/path/to/fusion-big-boss/ai.opencode"]
-}
-```
-
-Then link the four agent definitions. Run from the repository root; existing files are not overwritten:
-
-```sh
-(
-  set -eu
-  ROOT="$(pwd)"
-  mkdir -p "$HOME/.config/opencode/agents"
-  for role in fusion fusion-sidekick fusion-advisor fusion-reviewer; do
-    ln -s "$ROOT/ai.opencode/agents/$role.md" "$HOME/.config/opencode/agents/$role.md"
-  done
-)
-```
-
-Keep the clone in place. If Fusion is already installed, inspect existing profiles and plugin entries before replacing anything; avoid loading duplicate copies.
+**Migrating from the old local setup:** finish active workers, remove the old Fusion path from `plugins`, and remove only the Fusion agent symlinks pointing into that checkout from `~/.config/opencode/agents/`. Preserve custom files and unrelated settings. Then install the package above and restart OpenCode. Reapply your model choices with `/fusion` if needed.
 
 ## 2. Choose models
 
@@ -65,6 +44,6 @@ For code review, configure Reviewer, then ask **“Do a code review with the Fus
 
 - **Context:** choose Default or a supported smaller window, up to 1M. Keep native `compaction.auto` enabled. Budgets are local targets, not token or spending guarantees.
 - **Off:** preserves your model, conversation and workers. Existing workers retain their restrictions.
-- **Updates:** finish active work before reloading. The terminal UI and background service must both load the updated plugin; an unknown `inspect`/`validate` method usually means their versions differ.
+- **Updates:** run `opencode plugin update github:bluetripod/fusion-big-boss`. Finish active work before restarting the terminal UI; if the background service still has the old plugin, run `opencode service restart`. The package update includes all four agents.
 
 **Checks:** from the repository root, run `npm run test:opencode` (requires Bun) and `npm run typecheck:opencode`. See [development](../README.md#development) for the full suite.

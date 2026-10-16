@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- Register OpenCode's bundled Fusion agents when the plugin loads, so new roles
+  are available after package updates without installing separate agent links.
+- Use native Git package install/update instructions for OpenCode and Pi.
+
 ## 0.2.0 — 2026-10-16
 
 ### Added

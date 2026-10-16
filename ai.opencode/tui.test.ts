@@ -264,6 +264,7 @@ test("legacy last setup with an unavailable utility can Apply through the server
   const sessions: Record<string, any> = { ses_new: { id: "ses_new", agent: "fusion" } }
   const rpc: any = {}
   await fusion.setup({
+    agent: { transform: async () => {} },
     storage: { get: async (key: string) => store.get(key), set: async (key: string, value: unknown) => { store.set(key, value) }, scan: async () => ({ entries: [] }) },
     model: { list: async () => ({ data: models }), transform: async () => {}, reload: async () => {} },
     session: {

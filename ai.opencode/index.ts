@@ -1,4 +1,6 @@
-import { Plugin } from "@opencode/plugin"
+import { type Agent, Plugin } from "@opencode/plugin"
+import { readFile } from "node:fs/promises"
+import { parse as parseYaml } from "yaml"
 import { FusionRPC } from "./rpc"
 import { loadBriefing } from "../shared/briefing.mjs"
 import { splitContext, withContext } from "../shared/context.mjs"
@@ -119,6 +121,21 @@ export default Plugin.define({
   id: "fusion-mode",
   async setup(ctx) {
     const briefing = await loadBriefing()
+    const profiles = await Promise.all(["fusion", "fusion-sidekick", "fusion-advisor", "fusion-reviewer"].map(async (id) => {
+      const source = await readFile(new URL(`./agents/${id}.md`, import.meta.url), "utf8")
+      const match = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)([\s\S]*)$/.exec(source)
+      if (!match) throw new Error(`Invalid bundled Fusion agent: ${id}`)
+      const metadata = parseYaml(match[1]) as Pick<Agent.Info, "description" | "mode" | "permissions">
+      return { id, ...metadata, system: match[2].trim() }
+    }))
+    await ctx.agent.transform((editor) => {
+      for (const profile of profiles) editor.update(profile.id, (agent) => {
+        agent.description = profile.description
+        agent.mode = profile.mode
+        agent.system = profile.system
+        agent.permissions.push(...profile.permissions)
+      })
+    })
     const ensureContext = await contextModels(ctx)
     const claimedChild = new Map<string, string>()
     const configuring = new Set<string>()
