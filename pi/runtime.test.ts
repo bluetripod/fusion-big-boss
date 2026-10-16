@@ -2,8 +2,8 @@ import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { access, mkdir, mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { createAssistantMessageEventStream, type AssistantMessage, type Model, type SimpleStreamOptions, type TranscriptContext } from '@earendil-works/pi-ai';
-import { createAgentSession, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession } from '@earendil-works/pi-coding-agent';
+import { Type, createAssistantMessageEventStream, type AssistantMessage, type Model, type SimpleStreamOptions, type TranscriptContext } from '@earendil-works/pi-ai';
+import { createAgentSession, createReadToolDefinition, createWriteToolDefinition, createEditToolDefinition, createLsToolDefinition, createGrepToolDefinition, createFindToolDefinition, defineTool, DefaultResourceLoader, ModelRuntime, SessionManager, SettingsManager, type AgentSession } from '@earendil-works/pi-coding-agent';
 import { LiveWorkers, openOwned, runChild } from './worker.ts';
 import { RunRegistry, splitRuns } from './viewer.ts';
 import { createFusion } from './index.ts';
@@ -491,6 +491,113 @@ for (const mode of ['success', 'failure', 'disabled'] as const) test(`reduced ro
     }
     assert.ok(manager.getEntries().some(entry => entry.type === 'message' && entry.message.role === 'user' && JSON.stringify(entry.message.content).includes(oldText)), 'native compaction retains durable history');
   } finally { session.dispose(); }
+});
+
+function sandboxTools(cwd: string, options: { readOnly: boolean; textOnly?: boolean }) {
+  const read = createReadToolDefinition(cwd, options.textOnly ? { operations: {
+    access,
+    async readFile(path) {
+      const content = await readFile(path);
+      if (content.includes(0)) throw new Error('Text files only');
+      return content;
+    },
+  } } : undefined);
+  const mutations = [defineTool(createWriteToolDefinition(cwd)), defineTool(createEditToolDefinition(cwd))];
+  if (options.readOnly) for (const tool of mutations) tool.execute = async () => { throw new Error('Read-only sandbox'); };
+  return [defineTool(read), defineTool(createLsToolDefinition(cwd)), defineTool(createGrepToolDefinition(cwd)), defineTool(createFindToolDefinition(cwd)), ...mutations,
+    defineTool({ name: 'bash', label: 'Sandbox Bash', description: 'Deny shell execution in this regression fixture.',
+      parameters: Type.Object({ command: Type.String(), timeout: Type.Optional(Type.Number()) }),
+      async execute() { throw new Error('Sandbox command denied'); },
+    }),
+  ];
+}
+
+test('sandbox sidekick restrictions survive owned continuation and missing-factory resume fails before inference', async () => {
+  const env = await fixture((model, index) => index % 3 === 1
+    ? { ...reply(model, ''), stopReason: 'toolUse', content: [
+      { type: 'toolCall', id: `shell-${index}`, name: 'bash', arguments: { command: 'touch sandbox-marker' } },
+      { type: 'toolCall', id: `edit-${index}`, name: 'edit', arguments: { path: 'source.txt', edits: [{ oldText: index === 1 ? 'original' : 'changed', newText: index === 1 ? 'changed' : 'continued' }] } },
+    ] } as AssistantMessage : index % 3 === 2 ? { ...reply(model, ''), stopReason: 'toolUse', content: [
+      { type: 'toolCall', id: `read-${index}`, name: 'read', arguments: { path: 'source.txt' } },
+    ] } : reply(model, 'completed'));
+  await writeFile(join(env.cwd, 'source.txt'), 'original');
+  const base = { ...env, root: 'sandbox-root', role: 'sidekick' as const, choice: 'fusion-fake/one#low', task: 'check sandbox', briefing: 'contract', modelRuntime: env.runtime };
+  const first = await runChild({ ...base, sandboxTools });
+  const second = await runChild({ ...base, sandboxTools, resume: first.id });
+  assert.equal(second.id, first.id);
+  await assert.rejects(access(join(env.cwd, 'sandbox-marker')), { code: 'ENOENT' });
+  assert.equal(await readFile(join(env.cwd, 'source.txt'), 'utf8'), 'continued');
+  const messages = openOwned(env.cwd, env.dir, first.id, base.root, 'sidekick').buildSessionContext().messages;
+  for (const index of [1, 4]) {
+    const shell = messages.find(message => message.role === 'toolResult' && message.toolCallId === `shell-${index}`);
+    assert.ok(shell && shell.role === 'toolResult' && shell.isError);
+    const read = messages.find(message => message.role === 'toolResult' && message.toolCallId === `read-${index + 1}`);
+    assert.ok(read && read.role === 'toolResult' && !read.isError);
+    assert.ok(JSON.stringify(read.content).includes(index === 1 ? 'changed' : 'continued'));
+  }
+  const before = env.requests.length;
+  await assert.rejects(runChild({ ...base, resume: first.id }));
+  assert.equal(env.requests.length, before);
+});
+
+test('sandbox incomplete and throwing factories fail closed before any model turn or workload', async () => {
+  const env = await fixture((model, index) => index === 1 ? ({ ...reply(model, ''), stopReason: 'toolUse', content: [
+    { type: 'toolCall', id: 'marker', name: 'bash', arguments: { command: 'touch sandbox-marker' } },
+  ] }) : reply(model, 'completed'));
+  const base = { ...env, root: 'sandbox-root', role: 'sidekick' as const, choice: 'fusion-fake/one#low', task: 'check sandbox', briefing: 'contract', modelRuntime: env.runtime };
+  for (const factory of [
+    (cwd: string, options: { readOnly: boolean }) => sandboxTools(cwd, options).filter(tool => tool.name !== 'bash'),
+    () => { throw new Error('Sandbox factory unavailable'); },
+  ]) {
+    const before = env.requests.length;
+    await assert.rejects(runChild({ ...base, sandboxTools: factory }));
+    assert.equal(env.requests.length, before);
+    await assert.rejects(access(join(env.cwd, 'sandbox-marker')), { code: 'ENOENT' });
+  }
+});
+
+test('sandbox advisor propagates the factory to read-only evidence and retains bounded text-only owner reads', async () => {
+  let ownerCalls = 0, evidenceCalls = 0;
+  const env = await fixture((model, _index, context) => {
+    if (model.id === 'one' && ++ownerCalls === 1) return { ...reply(model, ''), stopReason: 'toolUse', content: [
+      { type: 'toolCall', id: 'bounded', name: 'read', arguments: { path: 'source.txt', offset: 1, limit: 350 } },
+      { type: 'toolCall', id: 'unbounded', name: 'read', arguments: { path: 'source.txt' } },
+      { type: 'toolCall', id: 'oversized', name: 'read', arguments: { path: 'source.txt', offset: 1, limit: 351 } },
+      { type: 'toolCall', id: 'binary', name: 'read', arguments: { path: 'binary.txt', offset: 1, limit: 1 } },
+      { type: 'toolCall', id: 'owner-write', name: 'write', arguments: { path: 'source.txt', content: 'tampered' } },
+      { type: 'toolCall', id: 'delegate', name: 'fusion_delegate', arguments: { role: 'sidekick', task: 'inspect source', background: true } },
+    ] } as AssistantMessage;
+    if (model.id === 'two' && ++evidenceCalls === 1) return { ...reply(model, ''), stopReason: 'toolUse', content: [
+      { type: 'toolCall', id: 'evidence-shell', name: 'bash', arguments: { command: 'touch sandbox-marker' } },
+      { type: 'toolCall', id: 'evidence-read', name: 'read', arguments: { path: 'source.txt' } },
+      { type: 'toolCall', id: 'evidence-edit', name: 'edit', arguments: { path: 'source.txt', edits: [{ oldText: 'frozen', newText: 'tampered' }] } },
+      { type: 'toolCall', id: 'evidence-write', name: 'write', arguments: { path: 'source.txt', content: 'tampered' } },
+    ] } as AssistantMessage;
+    return reply(model, context.messages.filter(message => message.role === 'toolResult').map(message => JSON.stringify(message.content)).join('\n'));
+  });
+  await writeFile(join(env.cwd, 'source.txt'), 'frozen evidence');
+  await writeFile(join(env.cwd, 'binary.txt'), Buffer.from([65, 0, 66]));
+  const base = { ...env, root: 'sandbox-root', role: 'advisor' as const, choice: 'fusion-fake/one#low', sidekickChoice: 'fusion-fake/two#low', task: 'assess source', briefing: 'contract', modelRuntime: env.runtime, sandboxTools };
+  const result = await runChild(base);
+  await assert.rejects(access(join(env.cwd, 'sandbox-marker')), { code: 'ENOENT' });
+  assert.equal(await readFile(join(env.cwd, 'source.txt'), 'utf8'), 'frozen evidence');
+  const owner = openOwned(env.cwd, env.dir, result.id, base.root, 'advisor');
+  const messages = owner.buildSessionContext().messages;
+  for (const [id, failed] of [['bounded', false], ['unbounded', true], ['oversized', true], ['binary', true], ['owner-write', true]] as const) {
+    const message = messages.find(message => message.role === 'toolResult' && message.toolCallId === id);
+    assert.ok(message && message.role === 'toolResult');
+    assert.equal(message.isError, failed, id);
+    if (!failed) assert.ok(JSON.stringify(message.content).includes('frozen evidence'));
+  }
+  const marker = owner.getBranch().find(entry => entry.type === 'custom' && entry.customType === 'fusion.pi.evidence-sidekick');
+  assert.ok(marker && marker.type === 'custom');
+  const child = openOwned(env.cwd, env.dir, (marker.data as { id: string }).id, result.id, 'sidekick').buildSessionContext().messages;
+  for (const [id, failed] of [['evidence-shell', true], ['evidence-read', false], ['evidence-edit', true], ['evidence-write', true]] as const) {
+    const message = child.find(message => message.role === 'toolResult' && message.toolCallId === id);
+    assert.ok(message && message.role === 'toolResult');
+    assert.equal(message.isError, failed, id);
+    if (!failed) assert.ok(JSON.stringify(message.content).includes('frozen evidence'));
+  }
 });
 
 test('sidekick runs ordinary Git directly through its SDK bash tool', async () => {
