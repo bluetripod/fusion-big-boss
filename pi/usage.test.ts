@@ -56,6 +56,34 @@ test('Pi reports unavailable child histories and incomplete writes without repai
   assert.equal(await readFile(file, 'utf8'), data);
 });
 
+test('Pi usage recognizes tiered prices without counting thresholds as prices or recalculating recorded costs', async () => {
+  const dir = await mkdtemp('/tmp/opencode/fusion-pi-usage-tiers-');
+  const zero = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const models = {
+    tiered: { cost: { ...zero, tiers: [{ ...zero, input: 2, inputTokensAbove: 100000 }] } },
+    flat: { cost: { ...zero, input: 1 } },
+    thresholdOnly: { cost: { ...zero, tiers: [{ ...zero, inputTokensAbove: 100000 }] } },
+  };
+  const entries = Object.keys(models).map(id => {
+    const entry = assistant(id, id, 10);
+    entry.message.usage.cost = { ...zero, total: 0 };
+    return entry;
+  });
+  entries.push(assistant('recorded', 'tiered', 200000));
+  const before = JSON.stringify(entries);
+  const ctx: any = { cwd: '/work', sessionManager: { getSessionId: () => 'root', getEntries: () => entries },
+    modelRegistry: { find: (_provider: string, id: keyof typeof models) => models[id] } };
+  const result = await collectUsage(ctx, dir);
+  const tiered = result.report.models.find(row => row.model === 'p/tiered')!;
+  assert.equal(tiered.values.cost, 0.1);
+  assert.equal(tiered.missing.cost, 0, 'a known zero cost must not become unavailable for a model with paid tiers');
+  const flat = result.report.models.find(row => row.model === 'p/flat')!;
+  assert.equal(flat.values.cost, 0);
+  assert.equal(flat.missing.cost, 0);
+  assert.equal(result.report.models.find(row => row.model === 'p/thresholdOnly')?.missing.cost, 1);
+  assert.equal(JSON.stringify(entries), before, 'reporting must not recalculate or mutate recorded usage');
+});
+
 test('/usage works without Fusion setup and displays a report without changing model or history', async () => {
   const dir = await mkdtemp('/tmp/opencode/fusion-pi-usage-command-');
   const commands = new Map<string, any>(), notices: string[] = [];

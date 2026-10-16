@@ -57,7 +57,8 @@ export async function collectUsage(ctx: ExtensionContext, dir: string) {
         model = `${source.provider}/${id}`;
         usage = source.usage;
         const native = ctx.modelRegistry.find(source.provider, id);
-        priced = !!native && Object.values(native.cost).some(value => value > 0);
+        priced = !!native && [native.cost, ...(native.cost.tiers ?? [])].some(cost =>
+          [cost.input, cost.output, cost.cacheRead, cost.cacheWrite].some(rate => rate > 0));
       } else if (entry.type === 'compaction' || entry.type === 'branch_summary') usage = entry.usage;
       else if (entry.type === 'message' && entry.message.role === 'toolResult' && entry.message.toolName !== 'fusion_delegate') usage = entry.message.usage;
       if (!usage) continue;

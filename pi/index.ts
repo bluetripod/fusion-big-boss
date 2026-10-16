@@ -63,14 +63,14 @@ export function createFusion(pi: ExtensionAPI, launch: (options: Launch) => Retu
     if (!matchesLead(ctx, choice)) throw new Error('Lead model or effort no longer matches the user-applied Fusion setup; reapply /fusion.');
     if (ctx.model?.contextWindow !== resolveChoice(choice, ctx.modelRegistry).model.contextWindow) throw new Error('Lead context budget changed; reapply /fusion before continuing.');
   }
-  async function restoreContext(ctx: ExtensionContext, native = false) {
+  async function restoreContext(ctx: ExtensionContext, { native = false, beforeStart = false } = {}) {
     const state = current(ctx), chosen = state.setup?.lead;
     if (!chosen || !ctx.model || state.disabled && !native) return;
     const ref = parseChoice(chosen), useNative = native;
     if (useNative ? ctx.model.provider !== ref?.provider || ctx.model.id !== ref.id : !matchesLead(ctx, chosen)) return;
     const lead = resolveChoice(useNative ? splitContext(chosen).choice : chosen, ctx.modelRegistry);
     if (ctx.model?.contextWindow === lead.model.contextWindow) return;
-    if (!ctx.isIdle() || configuring.has(root(ctx))) throw new Error('Lead context budget changed; finish the running turn before restoring /fusion.');
+    if (!ctx.isIdle() && !beforeStart || configuring.has(root(ctx))) throw new Error('Lead context budget changed; finish the running turn before restoring /fusion.');
     const oldModel = ctx.model!, oldEffort = pi.getThinkingLevel();
     const effort = useNative ? oldEffort : lead.effort;
     try {
@@ -156,7 +156,7 @@ export function createFusion(pi: ExtensionAPI, launch: (options: Launch) => Retu
       if (!action) return;
       if (action === 'Turn Fusion off') {
         if (!ctx.isIdle() || inFlight.get(root(ctx))?.size || configuring.has(root(ctx))) throw new Error('Finish or stop active Fusion work before turning Fusion off.');
-        await restoreContext(ctx, true);
+        await restoreContext(ctx, { native: true });
         pi.appendEntry('fusion.pi.disabled', {});
         refreshStatus(ctx);
         ctx.ui.notify('Fusion is off in this session. Native context restored for the unchanged lead model/effort; conversation and saved setup are unchanged.', 'info');
@@ -229,8 +229,8 @@ export function createFusion(pi: ExtensionAPI, launch: (options: Launch) => Retu
   pi.on('before_agent_start', async (event, ctx) => {
     if (!active(ctx)) return;
     event.systemPromptOptions.sections['fusion_role'] = `${leadPrompt}\n\n${(await briefing).full}\n\nUse fusion_worker to inspect, message or cancel your own running workers by confirmed sessionID. Automatic supervision supplies concise 60-second updates while work remains active and may request progress from quiet workers; it never cancels. Wrap-up is an ordinary message asking for findings, changed paths, checks, blockers and unfinished work; there is no special action. Sidekick and reviewer delegation requires background: true. Same-session continuations wait for the prior task; independent reviewers may run concurrently. Use background: true for advisor consultations when you need to retain control; foreground remains available. Messages are admitted, not confirmed read; cancellation is cooperative, not rollback.`;
-    // This SDK hook cannot cancel a start; never repair cap drift by mutating a streaming model.
-    try { await restoreContext(ctx); checkLead(ctx, current(ctx).setup!.lead); }
+    // This hook cannot cancel a start. Pi is already busy, but inference has not begun.
+    try { await restoreContext(ctx, { beforeStart: true }); checkLead(ctx, current(ctx).setup!.lead); }
     catch (error) { ctx.ui.notify(String(error), 'error'); }
   });
   pi.on('input', async (_event, ctx) => {

@@ -4,7 +4,7 @@
 
 ## 1. Load Fusion
 
-You need **Pi 0.87.1**, **Node ≥22.19.0**, configured model access, and a local clone of this repository. Pi supplies the extension's SDK dependencies.
+You need **Pi 1.3.0**, **Node ≥22.19.0**, configured model access, and a local clone of this repository. Pi supplies the extension's SDK dependencies. Installing this repository's development dependencies does not update your global Pi installation.
 
 From the **project you want to work on**, run:
 

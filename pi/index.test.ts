@@ -79,11 +79,13 @@ test('root budget restores on resume, tree, input and preflight without changing
   substitute = false;
   for (const event of ['session_start', 'session_tree', 'input', 'before_agent_start']) {
     model = models[0];
+    idle = event !== 'before_agent_start';
     await handlers.get(event)?.({ systemPromptOptions: { sections: {} } }, ctx);
     assert.equal(model.contextWindow, 50000, event);
     assert.equal(model.id, 'a');
     assert.equal(effort, 'high');
   }
+  idle = true;
   assert.equal(models[0].contextWindow, 250000);
   assert.equal(entries.length, 1, 'restoration does not replace the saved setup');
   model = models[0]; idle = false;
