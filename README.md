@@ -62,6 +62,18 @@ An **advisor/reviewer's sidekick** has a narrower tool set: file reads/lookups a
 
 OpenCode/Copilot lead guards are **not universal allowlists for arbitrary MCP or third-party tools**. All runtime restrictions depend on the adapter being active and loaded. Shell access can still modify files: these guards are **not an OS sandbox**.
 
+### Optional Pi MXC tool sandbox
+
+Load both the updated independent sandbox extension and this Fusion extension in the same parent Pi host (replace paths; documentation example only):
+
+```sh
+pi -e /absolute/sandbox/pi/index.ts -e /absolute/fusion/pi/index.ts
+```
+
+At each worker launch, Fusion requests a factory through the synchronous `agent-sandbox:worker-tools` event with `{provide(factory)}`. The sandbox extension supplies `createSandboxTools(cwd, {readOnly?, textOnly?})`; `Launch.sandboxTools` propagates to new/resumed workers and nested evidence workers even though child extensions remain disabled. Role allowlists are retained: only required native-name replacements are installed, and any missing replacement refuses launch. Once a provider has been seen, its absence refuses launch; a previously sandboxed child marked `fusion.pi.sandbox` cannot resume without the factory. Advisor/reviewer reads remain text-only and bounded to 350 lines, and evidence-only sidekicks receive read-only tools.
+
+Ordinary Fusion use without the sandbox extension is unchanged and has no extra hard runtime dependency. The sandbox's native `grep`/`find` wrappers require preinstalled `rg` and `fd`/`fdfind` on its sanitized PATH and fail closed without them; use system grep/find through sandboxed Bash as an alternative. This is tool-scoped MXC containment, not whole-agent isolation or coverage of arbitrary MCP/plugins. The Pi suite, typecheck and a real-MXC handoff/resume/read-only evidence probe passed locally. These package edits have not been installed live. Nothing automatically enables this integration, changes global configuration or selects a model.
+
 ## How delegation works
 
 For example, when you ask the lead to fix a bug:

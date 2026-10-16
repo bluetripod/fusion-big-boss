@@ -5,7 +5,7 @@ import { getSupportedThinkingLevels, type Usage } from '@earendil-works/pi-ai';
 import { loadBriefing } from '../shared/briefing.mjs';
 import { contextLabel, contextOptions, splitContext, withContext } from '../shared/context.mjs';
 import { activeState, choose, History, label, parseChoice, resolveChoice, roles, validateSetup, type Changes, type Draft, type Role } from './state.ts';
-import { assertChildRequest, allowedLeadCall, delegateSchema, LiveWorkers, openOwned, resultText, runChild, textResult, waitForTurn, workerDescription, workerSchema, type ChildRole, type Launch, type WorkerTurn } from './worker.ts';
+import { assertChildRequest, allowedLeadCall, delegateSchema, LiveWorkers, openOwned, resultText, runChild, textResult, waitForTurn, workerDescription, workerSchema, type ChildRole, type Launch, type SandboxTools, type WorkerTurn } from './worker.ts';
 import { RunRegistry, runStatus } from './viewer.ts';
 import { createViewer } from './viewer-ui.ts';
 import { collectUsage } from './usage.ts';
@@ -42,6 +42,18 @@ export function createFusion(pi: ExtensionAPI, launch: (options: Launch) => Retu
   let generation = 0;
   const runs = new RunRegistry();
   const workers = new LiveWorkers();
+  let sandboxRequired = false;
+  function workerSandbox() {
+    let factory: SandboxTools | undefined;
+    let invalid = false;
+    pi.events?.emit('agent-sandbox:worker-tools', { provide(value: unknown) {
+      if (typeof value !== 'function') { invalid = true; return; }
+      factory = value as SandboxTools;
+    } });
+    if (invalid || sandboxRequired && !factory) throw new Error('Sandbox worker provider unavailable; refusing host fallback.');
+    sandboxRequired ||= !!factory;
+    return factory;
+  }
   const viewer = createViewer(runs);
   const openAgents = (ctx: ExtensionContext) => viewer.open(ctx, rootDir(agentDir, ctx.cwd, ctx.sessionManager.getSessionId()));
   pi.registerCommand('usage', { description: 'Recorded session and Fusion subagent usage by model', handler: async (_args, ctx) => {
@@ -301,7 +313,7 @@ export function createFusion(pi: ExtensionAPI, launch: (options: Launch) => Retu
         if (role !== 'sidekick') resolveChoice(setup.sidekick, ctx.modelRegistry);
         if (role === 'reviewer') reviewerPreflight(ctx, resume);
         const data = await launch({ cwd: ctx.cwd, root: id, dir: childDir, agentDir, role, choice, task, resume, signal: controller.signal,
-          sidekickChoice: setup.sidekick, workers,
+          sidekickChoice: setup.sidekick, workers, sandboxTools: workerSandbox(),
           registry: ctx.modelRegistry, briefing: role === 'reviewer' ? instructions.reviewer : instructions.completion,
           onStarted: childID => {
             if (background) signal?.removeEventListener('abort', cancel);

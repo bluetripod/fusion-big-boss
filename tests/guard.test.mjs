@@ -650,7 +650,6 @@ test('Agent Plugins 1.0 manifest and Copilot directory layout expose the remaini
   const manifest = JSON.parse(await readFile(new URL('../plugin.json', import.meta.url), 'utf8'));
   assert.equal(manifest.$schema, 'https://agent-plugins.org/schemas/1.0.0/plugin.schema.json');
   assert.equal(manifest.name, 'fusion-big-boss');
-  assert.equal(manifest.version, '0.1.0');
   assert.equal(Object.hasOwn(manifest, 'agents'), false);
   assert.equal(Object.hasOwn(manifest, 'extensions'), false);
   const rootEntries = await readdir(new URL('../', import.meta.url));

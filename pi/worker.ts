@@ -4,7 +4,7 @@ import { realpathSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { Type, type Usage } from '@earendil-works/pi-ai';
-import { createAgentSession, createReadToolDefinition, DefaultPackageManager, DefaultResourceLoader, defineTool, getAgentDir, loadSkills, ModelRuntime, SessionManager, SettingsManager, type AgentSession } from '@earendil-works/pi-coding-agent';
+import { createAgentSession, createReadToolDefinition, DefaultPackageManager, DefaultResourceLoader, defineTool, getAgentDir, loadSkills, ModelRuntime, SessionManager, SettingsManager, type AgentSession, type ToolDefinition } from '@earendil-works/pi-coding-agent';
 import { label, parseChoice, resolveChoice, type Registry, type Role } from './state.ts';
 import { loadBriefing } from '../shared/briefing.mjs';
 import { createSupervisor } from '../shared/supervision.mjs';
@@ -175,7 +175,9 @@ export type Launch = {
   evidenceOnly?: boolean;
   onSessionReady?: (session: AgentSession, steer?: Steering) => void;
   workers?: LiveWorkers;
+  sandboxTools?: SandboxTools;
 };
+export type SandboxTools = (cwd: string, options: { readOnly: boolean; textOnly?: boolean }) => ToolDefinition<any, any, any>[];
 
 export type ChildResult = { id: string; text: string; usage: Usage };
 export const emptyUsage = (): Usage => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } });
@@ -187,15 +189,15 @@ export function addUsage(total: Usage, part: Usage): Usage {
   return total;
 }
 
-function evidenceRead(cwd: string) {
-  const read = createReadToolDefinition(cwd, { operations: {
+function evidenceRead(cwd: string, sandboxed?: ToolDefinition<any, any, any>) {
+  const read = sandboxed ?? defineTool(createReadToolDefinition(cwd, { operations: {
     access,
     async readFile(path) {
       const content = await readFile(path);
       if (!isUtf8(content) || content.includes(0)) throw new Error('Fusion advisor/reviewer can read text files only.');
       return content;
     },
-  } });
+  } }));
   return defineTool({ ...read, description: 'Read a specific text file or advertised installed skill document. Explicit offset >=1 and limit 1..350 are required; no repository-wide discovery.',
     async execute(...args: Parameters<typeof read.execute>) {
       if (allowedLeadCall('read', args[1])) throw new Error('Fusion advisor/reviewer read needs a text path, explicit offset >=1 and limit 1..350.');
@@ -211,6 +213,9 @@ export async function runChild(options: Launch): Promise<ChildResult> {
   await mkdir(dir, { recursive: true, mode: 0o700 });
   const manager = resume ? openOwned(cwd, dir, resume, root, role) : SessionManager.create(cwd, dir, { parentSession: root });
   if (!resume) manager.appendCustomEntry('fusion.pi.owner', { role, root, caller: root });
+  if (!options.sandboxTools && manager.getBranch().some(entry => entry.type === 'custom' && entry.customType === 'fusion.pi.sandbox')) {
+    throw new Error('This worker requires the sandbox provider; refusing an unsandboxed resume.');
+  }
   const agentDir = options.agentDir ?? getAgentDir();
   const settingsManager = SettingsManager.create(cwd, agentDir);
   const resolved = await new DefaultPackageManager({ cwd, agentDir, settingsManager }).resolve(async () => 'skip');
@@ -277,7 +282,7 @@ export async function runChild(options: Launch): Promise<ChildResult> {
           resolveChoice(options.sidekickChoice!, registry);
           const evidenceResume = params.sessionID ?? (role === 'reviewer' ? reviewerEvidenceID : undefined);
           const result = await runChild({ cwd, root: manager.getSessionId(), dir, agentDir, role: 'sidekick', choice: options.sidekickChoice!,
-            task: params.task, resume: evidenceResume, evidenceOnly: true, registry, modelRuntime: options.modelRuntime, workers,
+            task: params.task, resume: evidenceResume, evidenceOnly: true, registry, modelRuntime: options.modelRuntime, workers, sandboxTools: options.sandboxTools,
             signal: controller.signal, briefing: (await loadBriefing()).completion,
             onStarted: id => {
               toolSignal?.removeEventListener('abort', cancelQueued);
@@ -331,8 +336,21 @@ export async function runChild(options: Launch): Promise<ChildResult> {
     },
   });
   const tools = role !== 'sidekick' ? ['read', 'fusion_delegate', 'fusion_worker'] : options.evidenceOnly ? ['read', 'grep', 'find', 'ls', 'bash'] : ['read', 'grep', 'find', 'ls', 'bash', 'edit', 'write'];
+  let sandboxed: ToolDefinition<any, any, any>[] | undefined;
+  if (options.sandboxTools) {
+    const supplied = options.sandboxTools(cwd, { readOnly: role !== 'sidekick' || options.evidenceOnly === true, textOnly: role !== 'sidekick' });
+    const required = tools.filter(name => name !== 'fusion_delegate' && name !== 'fusion_worker');
+    if (!Array.isArray(supplied) || required.some(name => supplied.filter(tool => tool?.name === name && typeof tool.execute === 'function').length !== 1)) {
+      throw new Error('Sandbox factory must replace every allowed worker tool; host fallback is forbidden.');
+    }
+    sandboxed = supplied.filter(tool => required.includes(tool.name) || role === 'sidekick' && !options.evidenceOnly && tool.name === 'sandbox_exec');
+    if (!manager.getBranch().some(entry => entry.type === 'custom' && entry.customType === 'fusion.pi.sandbox')) manager.appendCustomEntry('fusion.pi.sandbox', {});
+  }
+  const customTools = role !== 'sidekick'
+    ? [evidenceRead(cwd, sandboxed?.find(tool => tool.name === 'read')), delegateEvidence, controlEvidence]
+    : sandboxed;
   const { session, modelFallbackMessage } = await createAgentSession({ cwd, agentDir, model, thinkingLevel: effort, modelRuntime: options.modelRuntime,
-    settingsManager, resourceLoader, sessionManager: manager, tools, ...(role !== 'sidekick' ? { customTools: [evidenceRead(cwd), delegateEvidence, controlEvidence] } : {}) });
+    settingsManager, resourceLoader, sessionManager: manager, tools: customTools?.map(tool => tool.name) ?? tools, ...(customTools ? { customTools } : {}) });
   const steer: Steering = async content => {
     // Only a live owner waiting for its evidence may wake. Other idle races only append.
     const wake = role !== 'sidekick' && waitingForEvidence && evidenceWork.size > 0 && session.isIdle && !closing && !signal?.aborted;
