@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.2.1 — 2026-10-26
+
+### Fixed
+
+- Load the Pi extension on bundled Pi builds (1.4.0). The Fusion viewer no longer
+  resolves `@earendil-works/pi-tui` from disk through `pi-coding-agent`; it imports
+  the host-provided package directly, which works on Pi 1.3.0 and 1.4.0.
+- Declare `@earendil-works/pi-tui` as an optional peer dependency.
+
 ## 0.2.0 — 2026-10-16
 
 ### Added

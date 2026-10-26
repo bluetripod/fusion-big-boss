@@ -1,9 +1,9 @@
-import { createRequire } from 'node:module';
 import { getMarkdownTheme, type AgentSession, type AgentSessionEvent, type Theme } from '@earendil-works/pi-coding-agent';
+import * as tui from '@earendil-works/pi-tui';
 import type { ChildRole } from './worker.ts';
 
-// Pi supplies TUI as an SDK dependency (it need not be hoisted in a local install).
-export const tui = createRequire(import.meta.resolve('@earendil-works/pi-coding-agent'))('@earendil-works/pi-tui');
+// Pi supplies pi-tui to extensions (aliased or bundled); resolving it from disk fails on bundled Pi.
+export { tui };
 export const truncateToWidth: (text: string, width: number) => string = tui.truncateToWidth;
 
 type Message = AgentSession['messages'][number];
