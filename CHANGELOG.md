@@ -1,22 +1,23 @@
 # Changelog
 
-## 0.2.3 — 2026-11-16
-
-### Fixed
-
-- Make the Copilot CLI extension self-contained. Copilot CLI 1.0.112 runs extensions
-  sandboxed, so imports from the shared folder failed and the guard did not start.
-  `git-command.mjs` now lives in the extension folder and `supervisor-core.mjs` is a
-  tested copy of `shared/supervision.mjs`.
-- Recognize the packaged Fusion lead when the sandbox cannot read the plugin's agents folder.
-
 ## 0.2.2 — 2026-11-16
 
 ### Fixed
 
-- Start OpenCode sidekicks, advisors and reviewers again on OpenCode 2.3. Its native
+- OpenCode: sidekicks, advisors and reviewers start again on OpenCode 2.3. Its native
   `subagent` tool no longer has a `background` argument (subagents always run in the
-  background), so the plugin no longer rejects launches that omit it.
+  background), and the plugin rejected every launch that omitted it.
+- Copilot CLI: the Fusion guard extension starts again on Copilot CLI 1.0.112. That
+  version runs extensions sandboxed, so imports from the shared folder failed.
+  `git-command.mjs` now lives in the extension folder and `supervisor-core.mjs` is a
+  tested copy of `shared/supervision.mjs`.
+- Copilot CLI: recognize the packaged Fusion lead when the sandbox cannot read the
+  plugin's agents folder.
+
+### Added
+
+- Tests that load a copy of the extension folder on its own, and that
+  `supervisor-core.mjs` matches `shared/supervision.mjs`.
 
 ## 0.2.1 — 2026-10-26
 
