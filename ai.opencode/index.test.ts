@@ -444,6 +444,7 @@ describe("Fusion sessions", () => {
     }
     const fresh: any = { agent: "fusion-sidekick", background: true }
     await delegate(fresh)
+    await delegate({ agent: "fusion-sidekick", prompt: "OpenCode's subagent tool has no background argument" })
     expect(fresh.sessionID).toBeUndefined()
     await fusion.setup(h.ctx as any)
     for (const sessionID of ["child", "duplicate"]) await delegate({ ...fresh, sessionID })
@@ -759,12 +760,13 @@ describe("Fusion sessions", () => {
     }
     await expect(h.toolHooks.get("execute.before")({ tool: "subagent", agent: "fusion-sidekick", sessionID: "child",
       input: { agent: "fusion-reviewer", background: true } })).rejects.toThrow("Fusion delegation")
-    for (const input of [{ background: false }, { background: undefined }, { model: "openai/gpt-6-sol#high" },
+    for (const input of [{ model: "openai/gpt-6-sol#high" },
       { model: null }, { reasoning_effort: "xhigh" }, { context_tier: "long" }, { contextWindow: 200000 }, { contextBudget: 200000 }, { sessionID: "" },
       { prompt: "" }, { prompt: "  " }, { prompt: null }]) {
       await expect(h.review(input)).rejects.toThrow()
     }
     await h.review()
+    await h.review({ background: undefined })
     await h.hooks.get("prompt")({ sessionID: "reviewer" })
     expect(h.sessions.reviewer.model.id).toBe("claude-opus-5.5")
     await h.review({}, "otherRoot")
@@ -1540,8 +1542,6 @@ describe("Fusion sessions", () => {
       await expect(before("fusion-sidekick", "child", { agent: target, background: true, prompt: "work" })).rejects.toThrow()
     }
     for (const unsafe of [
-      { agent: "fusion-sidekick", background: false },
-      { agent: "fusion-sidekick" },
       { agent: "fusion-sidekick", model: null, background: true },
       { agent: "fusion-sidekick", reasoning_effort: null, background: true },
       { agent: "fusion-sidekick", context_tier: "long", background: true },

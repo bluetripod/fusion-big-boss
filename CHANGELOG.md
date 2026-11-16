@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 — 2026-11-16
+
+### Fixed
+
+- Start OpenCode sidekicks, advisors and reviewers again on OpenCode 2.3. Its native
+  `subagent` tool no longer has a `background` argument (subagents always run in the
+  background), so the plugin no longer rejects launches that omit it.
+
 ## 0.2.1 — 2026-10-26
 
 ### Fixed

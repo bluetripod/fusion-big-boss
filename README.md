@@ -92,7 +92,7 @@ The lead sends the assignment in a tool call that starts a background sidekick c
 
 | Host | Start / continue an assignment | Inspect / steer / cancel |
 | :--- | :--- | :--- |
-| **OpenCode** | `subagent` with `background: true`; reuse its `sessionID` for follow-ups | `fusion_worker`: `status`, `message`, `cancel` |
+| **OpenCode** | `subagent` (always background); reuse its `sessionID` for follow-ups | `fusion_worker`: `status`, `message`, `cancel` |
 | **Copilot CLI** | `task` with `mode: background`; `write_agent` continues an idle worker | `read_agent`, `write_agent`, `fusion_cancel` |
 | **Pi** | `fusion_delegate` with `background: true`; reuse its `sessionID` for follow-ups | `fusion_worker`: `status`, `message`, `cancel` |
 

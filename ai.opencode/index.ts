@@ -37,9 +37,9 @@ const leadInstructions = [
   "## Delegation and review",
   "Own the plan, ambiguous requirements, architectural and security decisions, final review, and the user-facing answer.",
   "Assess source-reading needs before choosing an implementation approach, following Evidence before implementation in the briefing. Read and interpret source yourself. Use fusion-sidekick only for a precise file-location lookup with known search roots and filenames/symbols/patterns; it returns paths and line ranges, not source analysis or excerpts.",
-  "Use multiple persistent sidekick sessions in parallel for independent, fully specified tasks. Start and resume them with background: true; omit sessionID to create a worker and retain its confirmed ID for related follow-ups. Allow only one active task per session. Delegate only fully specified coding changes, file-location lookups, exact Git/check commands, or precise websearch/webfetch retrieval jobs within supplied scope and approvals. Supply inputs, exact actions, acceptance criteria and stop conditions; keep ambiguous exploration and diagnosis here. Give workers non-conflicting scope and coordinate conflicting writes and stable-tree checks.",
-  "Invoke the optional fusion-reviewer ONLY WHEN THE USER ASKS for Fusion reviewer code review, never automatically after coding or fixing. Follow User-requested code review to prepare a neutral frozen source-backed packet, then use native subagent with background: true, omitting model. Choose a retained same-change review conversation yourself with its confirmed direct-child sessionID; unrelated changes start fresh. Wait for the prior turn before continuing. Missing-evidence follow-ups may complete the requested review; a separate review or re-review requires another user request. The reviewer is read-only with skill access, not a planner or fixer. Suggest a different model family from the lead/author, without selecting or enforcing one.",
-  "Optionally consult fusion-advisor sparingly for material uncertainty, difficult tradeoffs, or consequential design decisions; absence/disablement is not a blocker. Prefer subagent(agent: fusion-advisor, background: true) so you can inspect progress, message or cancel it; background: false remains available when you choose to wait. Omit sessionID and model for a new consultation. Supply the precise question, exact evidence, constraints, attempted approaches/results, options, and desired decision. The advisor can read focused source and use its own evidence-only sidekicks in parallel for independent precise locations or specified Git/test checks, but cannot code. Continue the SAME consultation with its confirmed direct-child sessionID after its prior turn finishes. New unrelated decisions start fresh. The advisor can disagree, but you own the decision and final answer.",
+  "Use multiple persistent sidekick sessions in parallel for independent, fully specified tasks. Native subagent calls always run in the background; omit sessionID to create a worker and retain its confirmed ID for related follow-ups. Allow only one active task per session. Delegate only fully specified coding changes, file-location lookups, exact Git/check commands, or precise websearch/webfetch retrieval jobs within supplied scope and approvals. Supply inputs, exact actions, acceptance criteria and stop conditions; keep ambiguous exploration and diagnosis here. Give workers non-conflicting scope and coordinate conflicting writes and stable-tree checks.",
+  "Invoke the optional fusion-reviewer ONLY WHEN THE USER ASKS for Fusion reviewer code review, never automatically after coding or fixing. Follow User-requested code review to prepare a neutral frozen source-backed packet, then use native subagent, omitting model. Choose a retained same-change review conversation yourself with its confirmed direct-child sessionID; unrelated changes start fresh. Wait for the prior turn before continuing. Missing-evidence follow-ups may complete the requested review; a separate review or re-review requires another user request. The reviewer is read-only with skill access, not a planner or fixer. Suggest a different model family from the lead/author, without selecting or enforcing one.",
+  "Optionally consult fusion-advisor sparingly for material uncertainty, difficult tradeoffs, or consequential design decisions; absence/disablement is not a blocker. Start it with subagent(agent: fusion-advisor); it runs in the background, so you can inspect progress, message or cancel it with fusion_worker. Omit sessionID and model for a new consultation. Supply the precise question, exact evidence, constraints, attempted approaches/results, options, and desired decision. The advisor can read focused source and use its own evidence-only sidekicks in parallel for independent precise locations or specified Git/test checks, but cannot code. Continue the SAME consultation with its confirmed direct-child sessionID after its prior turn finishes. New unrelated decisions start fresh. The advisor can disagree, but you own the decision and final answer.",
   "Use fusion_worker with an owned sessionID to inspect status/recent output, send a message while work runs, or cancel. To ask for progress or a quick wrap-up/summary, send an ordinary message; inspect available output and cancel separately when appropriate. Messages are queued steering, not proof the worker has read or obeyed them. Cancellation preserves output/history and existing file changes; it is not rollback. Do not poll routinely; inspect when there is a concrete need, such as a slow task or changed instructions.",
   "You may implement directly, including multi-file changes. Delegate coding only when target files/symbols, the desired change, constraints, and checks are already precise; file count alone does not require delegation. Interpret failures and specify the next action yourself rather than delegating debugging or repair loops.",
   "Keep delicate judgment in the lead session. Delegate only when it is likely to save time or cost.",
@@ -649,7 +649,7 @@ export default Plugin.define({
       })
     })
 
-    // Native subagent accepts background (default false) and optional sessionID.
+    // Native subagent always runs in the background and accepts an optional sessionID.
     await ctx.tool.hook("execute.before", async (event) => {
       if (event.tool === "fusion_worker") {
         const sessionID = (event.input as { sessionID?: string } | null)?.sessionID
@@ -713,7 +713,7 @@ export default Plugin.define({
         }
         return
       }
-      const input = event.input as { agent?: string; sessionID?: string; model?: string; background?: boolean; prompt?: string } | null
+      const input = event.input as { agent?: string; sessionID?: string; model?: string; prompt?: string } | null
       if (!input || typeof input.agent !== "string") throw new Error("Choose an explicit Fusion subagent role.")
       const lead = tree.caller.id === tree.root.id && role === "fusion"
       const evidenceCaller = ["fusion-reviewer", "fusion-advisor"].includes(role ?? "") && input.agent === "fusion-sidekick"
@@ -736,7 +736,6 @@ export default Plugin.define({
       }
       if (input.agent === "fusion-reviewer") {
         if (configuring.has(tree.root.id)) throw new Error("Fusion setup is being applied; wait before invoking review.")
-        if (input.background !== true) throw new Error("fusion-reviewer requires background: true.")
         if (typeof input.prompt !== "string" || !input.prompt.trim()) throw new Error("Supply the source-backed review packet as the reviewer prompt.")
         if (!pair.reviewer) throw new Error("Reviewer is optional and unconfigured; ask the user to choose its model and effort with /fusion.")
         await requireAvailable(pair.reviewer, "reviewer")
@@ -762,7 +761,6 @@ export default Plugin.define({
         }
         return
       }
-      if (input.background !== true) throw new Error("fusion-sidekick requires background: true.")
       await requireAvailable(pair.sidekick, "sidekick")
       const owner = evidenceCaller ? tree.caller.id : tree.root.id
       const previous = role === "fusion-reviewer" ? await ctx.storage.get(childKey(owner)) : undefined
@@ -811,7 +809,7 @@ export default Plugin.define({
         const tree = await fusionTree(event.sessionID, event.agent)
         if (!tree || tree.caller.parentID !== tree.root.id) throw new Error("Advisor must be a direct Fusion lead child.")
         event.system.push({ type: "text", text: advisorInstructions })
-        event.system.push({ type: "text", text: "Use native subagent(agent: fusion-sidekick, background: true) only for precise evidence jobs. Omit sessionID for each independent worker, retain each confirmed ID for related follow-ups, and never borrow another caller's worker." })
+        event.system.push({ type: "text", text: "Use native subagent(agent: fusion-sidekick) only for precise evidence jobs. Omit sessionID for each independent worker, retain each confirmed ID for related follow-ups, and never borrow another caller's worker." })
         event.system.push({ type: "text", text: "Act on automatic updates from your evidence workers; use fusion_worker for detail or intervention. Quiet activity alone is not a hang. Keep progress replies concise, including the detail needed to understand progress and blockers." })
         for (const tool of Object.keys(event.tools ?? {})) if (!["read", "subagent", "fusion_worker"].includes(tool)) delete event.tools[tool]
         return
@@ -821,7 +819,7 @@ export default Plugin.define({
         if (!tree) throw new Error("Reviewer must be a direct Fusion lead child.")
         await ownedReviewer(event.sessionID, tree.root.id)
         event.system.push({ type: "text", text: briefing.reviewer })
-        event.system.push({ type: "text", text: "Use native subagent(agent: fusion-sidekick, background: true) only for precise evidence jobs. Retain the returned reviewer-owned sidekick sessionID for follow-ups, never borrow the lead's worker. You have no coding authority." })
+        event.system.push({ type: "text", text: "Use native subagent(agent: fusion-sidekick) only for precise evidence jobs. Retain the returned reviewer-owned sidekick sessionID for follow-ups, never borrow the lead's worker. You have no coding authority." })
         event.system.push({ type: "text", text: "Use fusion_worker only for your own evidence sidekick: inspect status, send a steering message, or cancel while it runs. Wrap-up is an ordinary message, not a separate task." })
         for (const tool of Object.keys(event.tools ?? {})) if (!["read", "skill", "subagent", "fusion_worker"].includes(tool)) delete event.tools[tool]
         return
