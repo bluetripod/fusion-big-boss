@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createHooks, inspectTextTarget, registerExtension } from '../com.github.copilot/extensions/fusion-guard/hooks.mjs';
 import { fusionAgentIdentity } from '../com.github.copilot/extensions/fusion-guard/identity.mjs';
-import { containsGitCommand } from '../shared/git-command.mjs';
+import { containsGitCommand } from '../com.github.copilot/extensions/fusion-guard/git-command.mjs';
 import { createRoleResolver } from '../com.github.copilot/extensions/fusion-guard/roles.mjs';
 import { createCancelTool } from '../com.github.copilot/extensions/fusion-guard/cancel.mjs';
 

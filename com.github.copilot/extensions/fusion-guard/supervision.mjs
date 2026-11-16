@@ -1,4 +1,4 @@
-import { createSupervisor } from '../../../shared/supervision.mjs';
+import { createSupervisor } from './supervisor-core.mjs';
 import { canonicalFusionRole, fusionAgentIdentity } from './identity.mjs';
 
 const terminal = new Set(['completed', 'failed', 'cancelled']);

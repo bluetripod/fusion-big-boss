@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.3 — 2026-11-16
+
+### Fixed
+
+- Make the Copilot CLI extension self-contained. Copilot CLI 1.0.112 runs extensions
+  sandboxed, so imports from the shared folder failed and the guard did not start.
+  `git-command.mjs` now lives in the extension folder and `supervisor-core.mjs` is a
+  tested copy of `shared/supervision.mjs`.
+- Recognize the packaged Fusion lead when the sandbox cannot read the plugin's agents folder.
+
 ## 0.2.2 — 2026-11-16
 
 ### Fixed

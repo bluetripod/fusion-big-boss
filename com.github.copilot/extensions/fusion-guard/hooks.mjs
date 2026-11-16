@@ -1,6 +1,6 @@
 import { open, stat } from 'node:fs/promises';
 import { decideTool, decideEvidenceTool, isGuardedTool, isTextSample, isWebTool } from './policy.mjs';
-import { containsGitCommand } from '../../../shared/git-command.mjs';
+import { containsGitCommand } from './git-command.mjs';
 import { createRoleResolver } from './roles.mjs';
 import { advisorRoleForLead, canonicalFusionRole, fusionAgentIdentity } from './identity.mjs';
 import { createCommands } from './commands.mjs';

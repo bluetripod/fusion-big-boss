@@ -1,4 +1,4 @@
-import { isAbsolute } from 'node:path';
+import { isAbsolute, resolve } from 'node:path';
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
@@ -9,9 +9,10 @@ const packagedLeadPath = fileURLToPath(new URL('../../agents/fusion.agent.md', i
 const namespace = 'fusion-big-boss:';
 const fusionRoles = new Set(['fusion', 'fusion-sidekick', 'fusion-advisor', 'fusion-reviewer']);
 
+// The sandboxed extension may not be able to read the agents folder; fall back to the exact packaged path.
 function isPackagedLeadPath(path) {
   try { return realpathSync(path) === realpathSync(packagedLeadPath); }
-  catch { return false; }
+  catch { return resolve(path) === resolve(packagedLeadPath); }
 }
 
 export function canonicalFusionRole(name) {
